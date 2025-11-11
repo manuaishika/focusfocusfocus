@@ -14,10 +14,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadData() {
     try {
-      const result = await chrome.storage.local.get(['tasks', 'progress']);
-      const tasks = result.tasks || ['LeetCode', 'GRE Practice'];
+      const result = await chrome.storage.local.get(['tasks', 'progress', 'taskUrls', 'websiteActivity']);
+      const tasks = result.tasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
       const progress = result.progress || {};
+      const taskUrls = result.taskUrls || {};
+      const websiteActivity = result.websiteActivity || {};
       const todayProgress = progress[today] || {};
+      const todayActivity = websiteActivity[today] || {};
 
       if (tasksList) {
         tasksList.innerHTML = '';
@@ -33,7 +36,32 @@ document.addEventListener('DOMContentLoaded', async () => {
           
           const label = document.createElement('label');
           label.htmlFor = `task-${task}`;
-          label.textContent = task;
+          
+          const taskName = document.createElement('span');
+          taskName.textContent = task;
+          label.appendChild(taskName);
+          
+          const taskUrl = taskUrls[task] || '';
+          const hasActivity = todayActivity[task] || false;
+          
+          // If task has a URL but no activity, disable checkbox
+          if (taskUrl && taskUrl.trim() !== '' && !hasActivity) {
+            checkbox.disabled = true;
+            taskItem.classList.add('disabled');
+            const status = document.createElement('span');
+            status.className = 'activity-status';
+            status.textContent = ' (No activity)';
+            status.style.color = '#f44336';
+            status.style.fontSize = '11px';
+            label.appendChild(status);
+          } else if (taskUrl && taskUrl.trim() !== '' && hasActivity) {
+            const status = document.createElement('span');
+            status.className = 'activity-status';
+            status.textContent = ' ✓';
+            status.style.color = '#4CAF50';
+            status.style.fontSize = '11px';
+            label.appendChild(status);
+          }
 
           if (checkbox.checked) {
             taskItem.classList.add('completed');
@@ -41,6 +69,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           checkbox.addEventListener('change', async () => {
             try {
+              // Check if task has URL but no activity
+              if (taskUrl && taskUrl.trim() !== '' && !hasActivity) {
+                checkbox.checked = false;
+                return;
+              }
+              
               const result = await chrome.storage.local.get(['progress']);
               const progress = result.progress || {};
               if (!progress[today]) {
@@ -55,6 +89,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
 
               await chrome.storage.local.set({ progress });
+              loadData(); // Reload to update UI
             } catch (error) {
               console.error('Error saving progress:', error);
             }

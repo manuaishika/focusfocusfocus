@@ -3,7 +3,7 @@
   "name": "Daily Task Tracker",
   "version": "1.0",
   "description": "Reminds you to do your daily LeetCode, GRE, etc., and shows a GitHub-style progress heatmap.",
-  "permissions": ["storage", "alarms", "notifications"],
+  "permissions": ["storage", "alarms", "notifications", "tabs", "webNavigation"],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -16,6 +16,9 @@
   "background": {
     "service_worker": "background.js"
   },
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "web_accessible_resources": [
     {
       "resources": ["heatmap.html", "heatmap.css", "heatmap.js"],
