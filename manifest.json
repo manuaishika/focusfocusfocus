@@ -15,6 +15,12 @@
   "options_page": "options.html",
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["heatmap.html", "heatmap.css", "heatmap.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
 }
 

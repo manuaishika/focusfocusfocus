@@ -18,42 +18,31 @@ document.addEventListener('DOMContentLoaded', async () => {
       taskHeatmap.appendChild(title);
 
       const chartDiv = document.createElement('div');
-      chartDiv.id = `heatmap-${task}`;
+      chartDiv.className = 'heatmap-grid';
       taskHeatmap.appendChild(chartDiv);
 
       heatmapContainer.appendChild(taskHeatmap);
 
-      const data = {};
-      Object.keys(progress).forEach(date => {
-        if (progress[date][task]) {
-          data[date] = 1;
-        }
-      });
+      // Generate last 365 days
+      const days = [];
+      const today = new Date();
+      for (let i = 364; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
+        days.push({
+          date: dateStr,
+          completed: progress[dateStr] && progress[dateStr][task] || false
+        });
+      }
 
-      const cal = new CalHeatmap();
-      cal.paint({
-        itemSelector: `#heatmap-${task}`,
-        data: data,
-        domain: {
-          type: 'month',
-          label: { text: 'MMM', textAlign: 'start', position: 'top' }
-        },
-        subDomain: {
-          type: 'day',
-          radius: 2,
-          label: 'DD'
-        },
-        range: 12,
-        scale: {
-          color: {
-            type: 'linear',
-            range: ['#ebedf0', '#40c463'],
-            domain: [0, 1]
-          }
-        },
-        date: {
-          start: new Date(new Date().setMonth(new Date().getMonth() - 11))
-        }
+      // Render heatmap
+      days.forEach(day => {
+        const cell = document.createElement('div');
+        cell.className = 'heatmap-cell';
+        cell.style.backgroundColor = day.completed ? '#40c463' : '#ebedf0';
+        cell.title = `${day.date}: ${day.completed ? 'Completed' : 'Not completed'}`;
+        chartDiv.appendChild(cell);
       });
     });
   }
