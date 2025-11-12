@@ -4,29 +4,45 @@ chrome.runtime.onInstalled.addListener(() => {
     when: Date.now() + 60000
   });
 
-  // Initialize default tasks with ML Practice and Maths
-  chrome.storage.local.get(['tasks', 'taskUrls'], (result) => {
-    if (!result.tasks || result.tasks.length === 0) {
-      const defaultTasks = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
-      const defaultUrls = {
-        'LeetCode': 'https://leetcode.com',
-        'GRE Practice': 'https://www.ets.org/gre',
-        'ML Practice': '',
-        'Maths': ''
-      };
-      chrome.storage.local.set({ 
-        tasks: defaultTasks,
-        taskUrls: defaultUrls
-      });
-    }
+  // Initialize permanent tasks and their URLs
+  chrome.storage.local.get(['permanentTasks', 'taskUrls', 'taskTypes'], (result) => {
+    const permanentTasks = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+    const permanentUrls = {
+      'LeetCode': 'https://leetcode.com',
+      'GRE Practice': 'https://www.ets.org/gre',
+      'ML Practice': '',
+      'Maths': ''
+    };
+    
+    // Initialize permanent tasks (always daily tasks)
+    const taskTypes = result.taskTypes || {};
+    permanentTasks.forEach(task => {
+      taskTypes[task] = 'daily';
+    });
+    
+    // Merge with existing URLs
+    const taskUrls = result.taskUrls || {};
+    Object.assign(taskUrls, permanentUrls);
+    
+    chrome.storage.local.set({ 
+      permanentTasks: permanentTasks,
+      taskUrls: taskUrls,
+      taskTypes: taskTypes
+    });
   });
 });
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === "dailyReminder") {
-    chrome.storage.local.get(['tasks'], (result) => {
-      const tasks = result.tasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
-      const taskList = tasks.join(' and ');
+    chrome.storage.local.get(['permanentTasks', 'tasks', 'taskTypes'], (result) => {
+      const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+      const customTasks = result.tasks || [];
+      const taskTypes = result.taskTypes || {};
+      
+      // Only remind about daily tasks
+      const allTasks = [...permanentTasks, ...customTasks];
+      const dailyTasks = allTasks.filter(task => (taskTypes[task] || 'daily') === 'daily');
+      const taskList = dailyTasks.join(' and ');
       
       chrome.notifications.create({
         type: "basic",

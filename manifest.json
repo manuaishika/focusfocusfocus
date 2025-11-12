@@ -21,7 +21,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["heatmap.html", "heatmap.css", "heatmap.js"],
+      "resources": ["heatmap.html", "heatmap.css", "heatmap.js", "archive.html", "archive.css", "archive.js"],
       "matches": ["<all_urls>"]
     }
   ]

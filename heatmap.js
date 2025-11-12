@@ -13,8 +13,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadData() {
     try {
-      const result = await chrome.storage.local.get(['tasks', 'progress']);
-      const tasks = result.tasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskTypes']);
+      const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+      const customTasks = result.tasks || [];
+      const taskTypes = result.taskTypes || {};
+      
+      // Only show daily tasks in heatmap
+      const allTasks = [...permanentTasks, ...customTasks];
+      const tasks = allTasks.filter(task => (taskTypes[task] || 'daily') === 'daily');
+      
       const progress = result.progress || {};
 
       if (heatmapContainer) {

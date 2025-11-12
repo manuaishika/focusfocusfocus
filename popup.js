@@ -14,18 +14,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadData() {
     try {
-      const result = await chrome.storage.local.get(['tasks', 'progress', 'taskUrls', 'websiteActivity']);
-      const tasks = result.tasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskUrls', 'websiteActivity', 'taskTypes']);
+      const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+      const customTasks = result.tasks || [];
+      const allTasks = [...permanentTasks, ...customTasks];
       const progress = result.progress || {};
       const taskUrls = result.taskUrls || {};
       const websiteActivity = result.websiteActivity || {};
+      const taskTypes = result.taskTypes || {};
       const todayProgress = progress[today] || {};
       const todayActivity = websiteActivity[today] || {};
 
       if (tasksList) {
         tasksList.innerHTML = '';
 
-        tasks.forEach(task => {
+        allTasks.forEach(task => {
+          const taskType = taskTypes[task] || 'daily';
           const taskItem = document.createElement('div');
           taskItem.className = 'task-item';
           
@@ -39,6 +43,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           
           const taskName = document.createElement('span');
           taskName.textContent = task;
+          
+          // Show task type badge for custom tasks
+          if (taskType === 'onetime') {
+            const badge = document.createElement('span');
+            badge.style.cssText = 'background: #FF9800; color: white; padding: 2px 6px; border-radius: 3px; font-size: 9px; margin-left: 6px; font-weight: 500;';
+            badge.textContent = 'One-Time';
+            taskName.appendChild(badge);
+          }
+          
           label.appendChild(taskName);
           
           const taskUrl = taskUrls[task] || '';
@@ -114,9 +127,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  const viewArchiveBtn = document.getElementById('view-archive');
+
   if (optionsBtn) {
     optionsBtn.addEventListener('click', () => {
       chrome.runtime.openOptionsPage();
+    });
+  }
+
+  if (viewArchiveBtn) {
+    viewArchiveBtn.addEventListener('click', () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL('archive.html') });
     });
   }
 
