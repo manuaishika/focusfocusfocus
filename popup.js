@@ -2,6 +2,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   const tasksList = document.getElementById('tasks-list');
   const viewHeatmapBtn = document.getElementById('view-heatmap');
   const optionsBtn = document.getElementById('options');
+  const toggleAddTaskBtn = document.getElementById('toggle-add-task');
+  const addTaskForm = document.getElementById('add-task-form');
+  const newTaskInput = document.getElementById('new-task-input');
+  const taskTypeSelect = document.getElementById('task-type-select');
+  const addTaskBtn = document.getElementById('add-task-btn');
 
   if (!chrome || !chrome.storage) {
     if (tasksList) {
@@ -11,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const today = new Date().toISOString().split('T')[0];
+  const PERMANENT_TASKS = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
 
   async function loadData() {
     try {
@@ -138,6 +144,71 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (viewArchiveBtn) {
     viewArchiveBtn.addEventListener('click', () => {
       chrome.tabs.create({ url: chrome.runtime.getURL('archive.html') });
+    });
+  }
+
+  // Toggle add task form
+  if (toggleAddTaskBtn && addTaskForm) {
+    toggleAddTaskBtn.addEventListener('click', () => {
+      addTaskForm.classList.toggle('hidden');
+      if (!addTaskForm.classList.contains('hidden') && newTaskInput) {
+        newTaskInput.focus();
+      }
+    });
+  }
+
+  // Add task functionality
+  if (addTaskBtn) {
+    addTaskBtn.addEventListener('click', async () => {
+      const taskName = newTaskInput ? newTaskInput.value.trim() : '';
+      const taskType = taskTypeSelect ? taskTypeSelect.value : 'daily';
+      
+      if (taskName) {
+        try {
+          const result = await chrome.storage.local.get(['tasks', 'taskUrls', 'taskTypes', 'permanentTasks']);
+          const tasks = result.tasks || [];
+          const taskUrls = result.taskUrls || {};
+          const taskTypes = result.taskTypes || {};
+          const permanentTasks = result.permanentTasks || PERMANENT_TASKS;
+          
+          // Check if task already exists (in permanent or custom)
+          const allTasks = [...permanentTasks, ...tasks];
+          if (allTasks.includes(taskName)) {
+            alert('Task already exists!');
+            return;
+          }
+          
+          // Add new task
+          tasks.push(taskName);
+          taskUrls[taskName] = ''; // Initialize with empty URL
+          taskTypes[taskName] = taskType;
+          
+          await chrome.storage.local.set({ tasks, taskUrls, taskTypes });
+          
+          // Clear input and hide form
+          if (newTaskInput) {
+            newTaskInput.value = '';
+          }
+          if (addTaskForm) {
+            addTaskForm.classList.add('hidden');
+          }
+          
+          // Reload data to show new task
+          loadData();
+        } catch (error) {
+          console.error('Error adding task:', error);
+          alert('Error adding task. Please try again.');
+        }
+      }
+    });
+  }
+
+  // Allow Enter key to add task
+  if (newTaskInput) {
+    newTaskInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter' && addTaskBtn) {
+        addTaskBtn.click();
+      }
     });
   }
 

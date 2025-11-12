@@ -21,6 +21,74 @@ h1 {
 
 #tasks-list {
   margin-bottom: 15px;
+  width: 100%;
+}
+
+.add-task-section {
+  width: 100%;
+  margin-bottom: 15px;
+}
+
+.toggle-add-btn {
+  width: 100%;
+  padding: 8px;
+  border: 2px dashed #4CAF50;
+  border-radius: 6px;
+  background: transparent;
+  color: #4CAF50;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.toggle-add-btn:hover {
+  background: #f0f8f0;
+  border-color: #45a049;
+}
+
+.add-task-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.add-task-form.hidden {
+  display: none;
+}
+
+.add-task-form input {
+  flex: 1;
+  min-width: 150px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.add-task-form select {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  background: white;
+  min-width: 80px;
+}
+
+.add-task-form button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  background: #4CAF50;
+  color: white;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.add-task-form button:hover {
+  background: #45a049;
 }
 
 .task-item {

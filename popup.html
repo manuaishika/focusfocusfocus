@@ -10,6 +10,19 @@
   <div class="container">
     <h1>Today's Tasks</h1>
     <div id="tasks-list"></div>
+    
+    <div class="add-task-section">
+      <button id="toggle-add-task" class="toggle-add-btn">+ Add Task</button>
+      <div id="add-task-form" class="add-task-form hidden">
+        <input type="text" id="new-task-input" placeholder="Task name">
+        <select id="task-type-select" title="Task type">
+          <option value="daily">Daily</option>
+          <option value="onetime">One-Time</option>
+        </select>
+        <button id="add-task-btn">Add</button>
+      </div>
+    </div>
+    
     <div class="actions">
       <button id="view-heatmap">View Heatmap</button>
       <button id="view-archive">Archive</button>
