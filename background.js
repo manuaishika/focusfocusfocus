@@ -10,7 +10,7 @@ chrome.runtime.onInstalled.addListener(() => {
     const defaultPermanentTasks = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
     const defaultPermanentUrls = {
       'LeetCode': 'https://leetcode.com',
-      'GRE Practice': 'https://www.ets.org/gre',
+      'GRE Practice': 'https://www.gregmat.com/',
       'ML Practice': '',
       'Maths': ''
     };
@@ -40,8 +40,13 @@ chrome.runtime.onInstalled.addListener(() => {
         taskTypes[task] = 'daily';
         shouldPersist = true;
       }
+      // Set default URL if missing, or update GRE Practice from old ETS URL to GregMat
       if (taskUrls[task] === undefined && defaultPermanentUrls[task] !== undefined) {
         taskUrls[task] = defaultPermanentUrls[task];
+        shouldPersist = true;
+      } else if (task === 'GRE Practice' && taskUrls[task] === 'https://www.ets.org/gre') {
+        // Migrate old ETS URL to GregMat
+        taskUrls[task] = 'https://www.gregmat.com/';
         shouldPersist = true;
       }
     });
