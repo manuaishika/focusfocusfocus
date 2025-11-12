@@ -42,7 +42,18 @@ async function scheduleAllReminders() {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  chrome.alarms.create("trackingHeartbeat", { periodInMinutes: 1 });
+  // Create frequent heartbeat for better tracking (every 30 seconds)
+  chrome.alarms.create("trackingHeartbeat", { periodInMinutes: 0.5 });
+  
+  // Start tracking immediately on install
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) {
+      await handleTrackingForTab(tab);
+    }
+  } catch (e) {
+    // Ignore initialization errors
+  }
   
   // Initialize default reminder if none exist
   const result = await chrome.storage.local.get(['reminderTimes']);
@@ -113,12 +124,35 @@ chrome.runtime.onInstalled.addListener(async () => {
   });
 });
 
-// Reschedule reminders on startup
-chrome.runtime.onStartup.addListener(() => {
+// Reschedule reminders on startup and initialize tracking
+chrome.runtime.onStartup.addListener(async () => {
   scheduleAllReminders();
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) {
+      await handleTrackingForTab(tab);
+    }
+  } catch (e) {
+    console.error("Error initializing tracking on startup:", e);
+  }
 });
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+// Also initialize tracking when service worker wakes up
+async function initializeTracking() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tab) {
+      await handleTrackingForTab(tab);
+    }
+  } catch (e) {
+    // Ignore
+  }
+}
+
+// Initialize on load
+initializeTracking();
+
+chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === "dailyReminder" || alarm.name.startsWith("reminder_")) {
     chrome.storage.local.get(['permanentTasks', 'tasks', 'taskTypes', 'progress', 'remindersEnabled'], (result) => {
       // Check if reminders are enabled
@@ -153,7 +187,25 @@ chrome.alarms.onAlarm.addListener((alarm) => {
       }
     });
   } else if (alarm.name === "trackingHeartbeat") {
-    recordTrackingProgress(true);
+    // Record progress every heartbeat
+    await recordTrackingProgress(true);
+    
+    // Also reinitialize tracking if we lost it
+    if (!activeTracking.task || !activeTracking.tabId) {
+      await initializeTracking();
+    } else {
+      // Verify the tracked tab is still active
+      try {
+        const tab = await chrome.tabs.get(activeTracking.tabId);
+        if (!tab || !tab.active) {
+          // Tab is no longer active, reinitialize
+          await initializeTracking();
+        }
+      } catch (e) {
+        // Tab might be closed, reinitialize
+        await initializeTracking();
+      }
+    }
   }
 });
 
@@ -168,54 +220,103 @@ let activeTracking = {
 
 async function findMatchingTask(url) {
   try {
+    if (!url || url.trim() === '') return null;
+    
     const parsed = new URL(url);
-    const domain = parsed.hostname.replace(/^www\./, '');
+    const domain = parsed.hostname.replace(/^www\./, '').toLowerCase();
     const { taskUrls = {} } = await chrome.storage.local.get(['taskUrls']);
+    
     for (const [task, taskUrl] of Object.entries(taskUrls)) {
       if (!taskUrl || taskUrl.trim() === '') continue;
       try {
-        const taskDomain = new URL(taskUrl).hostname.replace(/^www\./, '');
-        if (domain === taskDomain || domain.endsWith(`.${taskDomain}`)) {
+        const taskUrlObj = new URL(taskUrl);
+        let taskDomain = taskUrlObj.hostname.replace(/^www\./, '').toLowerCase();
+        
+        // Exact domain match
+        if (domain === taskDomain) {
+          return task;
+        }
+        
+        // Subdomain match (e.g., vocab.gregmat.com or problems.gregmat.com matches gregmat.com)
+        if (domain.endsWith('.' + taskDomain)) {
           return task;
         }
       } catch (error) {
-        // skip malformed task URL
+        // Skip malformed URLs
       }
     }
   } catch (error) {
-    // ignore invalid URL
+    console.error('Error in findMatchingTask:', error, url);
   }
   return null;
 }
 
 async function recordTrackingProgress(isHeartbeat = false) {
-  if (!activeTracking.task || !activeTracking.tabId) return;
-  const now = Date.now();
-  const elapsed = now - activeTracking.lastUpdate;
-  if (elapsed <= 0) return;
-
-  activeTracking.lastUpdate = now;
-  const today = new Date().toISOString().split('T')[0];
-  const { websiteActivity = {}, websiteActivityDurations = {} } = await chrome.storage.local.get([
-    'websiteActivity',
-    'websiteActivityDurations'
-  ]);
-
-  if (!websiteActivityDurations[today]) websiteActivityDurations[today] = {};
-  websiteActivityDurations[today][activeTracking.task] =
-    (websiteActivityDurations[today][activeTracking.task] || 0) + elapsed;
-
-  if (!websiteActivity[today]) websiteActivity[today] = {};
-  if (websiteActivityDurations[today][activeTracking.task] >= MIN_ACTIVE_MS) {
-    if (!websiteActivity[today][activeTracking.task]) {
-      websiteActivity[today][activeTracking.task] = true;
+  if (!activeTracking.task || !activeTracking.tabId) {
+    // Try to re-initialize tracking if we lost it
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tab) {
+        await handleTrackingForTab(tab);
+      }
+    } catch (e) {
+      // Ignore
     }
+    return;
+  }
+  
+  // Verify tab is still active
+  try {
+    const tab = await chrome.tabs.get(activeTracking.tabId);
+    if (!tab || !tab.active) {
+      return;
+    }
+  } catch (e) {
+    // Tab might be closed
+    activeTracking = { tabId: null, task: null, startTime: 0, lastUpdate: 0 };
+    return;
+  }
+  
+  const now = Date.now();
+  let elapsed = now - (activeTracking.lastUpdate || activeTracking.startTime);
+  
+  if (elapsed <= 0) return;
+  // Allow up to 5 minutes of elapsed time (in case of brief pauses)
+  if (elapsed > 5 * 60 * 1000) {
+    // Too long elapsed, probably the tab was inactive - don't count this interval
+    elapsed = 0;
   }
 
-  await chrome.storage.local.set({
-    websiteActivity,
-    websiteActivityDurations
-  });
+  if (elapsed > 0) {
+    activeTracking.lastUpdate = now;
+    const today = new Date().toISOString().split('T')[0];
+    const { websiteActivity = {}, websiteActivityDurations = {} } = await chrome.storage.local.get([
+      'websiteActivity',
+      'websiteActivityDurations'
+    ]);
+
+    if (!websiteActivityDurations[today]) websiteActivityDurations[today] = {};
+    const currentDuration = websiteActivityDurations[today][activeTracking.task] || 0;
+    const newDuration = currentDuration + elapsed;
+    websiteActivityDurations[today][activeTracking.task] = newDuration;
+
+    if (!websiteActivity[today]) websiteActivity[today] = {};
+    
+    const minutesSpent = Math.round(newDuration / 1000 / 60);
+    const percentComplete = Math.min(100, Math.round((newDuration / MIN_ACTIVE_MS) * 100));
+    
+    if (newDuration >= MIN_ACTIVE_MS) {
+      if (!websiteActivity[today][activeTracking.task]) {
+        websiteActivity[today][activeTracking.task] = true;
+        console.log(`✓ Activity confirmed for ${activeTracking.task} after ${minutesSpent} minutes`);
+      }
+    }
+
+    await chrome.storage.local.set({
+      websiteActivity,
+      websiteActivityDurations
+    });
+  }
 }
 
 async function stopTracking(tabId) {
@@ -236,6 +337,19 @@ async function handleTrackingForTab(tab) {
     return;
   }
 
+  // Skip chrome:// and extension:// URLs
+  try {
+    const url = new URL(tab.url || '');
+    if (url.protocol === 'chrome:' || url.protocol === 'chrome-extension:') {
+      await stopTracking(tab.id);
+      return;
+    }
+  } catch (e) {
+    // Invalid URL, skip
+    await stopTracking(tab.id);
+    return;
+  }
+
   if (!activeWindowFocused) {
     await stopTracking(tab.id);
     return;
@@ -243,11 +357,18 @@ async function handleTrackingForTab(tab) {
 
   const task = await findMatchingTask(tab.url || '');
   if (!task) {
-    await stopTracking(tab.id);
+    // Only stop if we were tracking something, otherwise just ignore
+    if (activeTracking.tabId === tab.id) {
+      await stopTracking(tab.id);
+    }
     return;
   }
 
   if (activeTracking.tabId === tab.id && activeTracking.task === task) {
+    // Already tracking this, just ensure lastUpdate is set
+    if (!activeTracking.lastUpdate) {
+      activeTracking.lastUpdate = Date.now();
+    }
     return;
   }
 
@@ -267,12 +388,19 @@ async function handleTrackingForTab(tab) {
 }
 
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  // Record progress for previously active tab
   await stopTracking(activeTracking.tabId);
   try {
     const tab = await chrome.tabs.get(activeInfo.tabId);
-    await handleTrackingForTab(tab);
+    if (tab) {
+      await handleTrackingForTab(tab);
+      // Start recording immediately if it's a matching task
+      if (activeTracking.tabId === tab.id && activeTracking.task) {
+        await recordTrackingProgress();
+      }
+    }
   } catch (error) {
-    console.error('Error handling tab activation', error);
+    // Ignore errors
   }
 });
 
@@ -281,10 +409,22 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' || changeInfo.url) {
-    if (tab.active) {
+  // Handle URL changes and page loads - record progress before switching
+  if (changeInfo.url) {
+    // URL changed - record progress for old URL, then start tracking new URL
+    if (tabId === activeTracking.tabId) {
+      await recordTrackingProgress();
+    }
+  }
+  
+  if (changeInfo.url || changeInfo.status === 'complete') {
+    if (tab && tab.active) {
       await handleTrackingForTab(tab);
-    } else if (tabId === activeTracking.tabId && !tab.active) {
+      // Also record immediately when tab becomes active with matching URL
+      if (activeTracking.tabId === tab.id) {
+        await recordTrackingProgress();
+      }
+    } else if (tabId === activeTracking.tabId && tab && !tab.active) {
       await stopTracking(tabId);
     }
   }
@@ -295,7 +435,13 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (!activeWindowFocused) {
     await stopTracking(activeTracking.tabId);
   } else {
-    const [tab] = await chrome.tabs.query({ active: true, windowId });
-    await handleTrackingForTab(tab);
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, windowId });
+      if (tab) {
+        await handleTrackingForTab(tab);
+      }
+    } catch (error) {
+      console.error('Error handling window focus:', error);
+    }
   }
 });

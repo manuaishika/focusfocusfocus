@@ -20,16 +20,59 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadData() {
     try {
-      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskUrls', 'websiteActivity', 'taskTypes']);
+      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskUrls', 'websiteActivity', 'taskTypes', 'websiteActivityDurations']);
       const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
       const customTasks = result.tasks || [];
       const allTasks = [...permanentTasks, ...customTasks];
       const progress = result.progress || {};
       const taskUrls = result.taskUrls || {};
       const websiteActivity = result.websiteActivity || {};
+      const websiteActivityDurations = result.websiteActivityDurations || {};
       const taskTypes = result.taskTypes || {};
       const todayProgress = progress[today] || {};
       const todayActivity = websiteActivity[today] || {};
+      const todayDurations = websiteActivityDurations[today] || {};
+
+      // Calculate progress percentage
+      // Count ALL tasks (daily + one-time) for total
+      // Count completed tasks (can be completed via activity OR manual checkbox)
+      const totalTasks = allTasks.length; // x = total tasks (all types)
+      const completedTasks = allTasks.filter(task => {
+        const taskUrl = taskUrls[task] || '';
+        // Check if task is manually marked as complete (checkbox checked)
+        const isManuallyCompleted = todayProgress[task] === true;
+        // Check if task has activity (for URL-based tasks)
+        const hasActivity = todayActivity[task] === true;
+        
+        if (taskUrl && taskUrl.trim() !== '') {
+          // For tasks with URLs, completed if has activity OR manually checked
+          return hasActivity || isManuallyCompleted;
+        } else {
+          // For manual tasks, completed if checkbox is checked
+          return isManuallyCompleted;
+        }
+      });
+      
+      // Calculate percentage: (completed / total) * 100
+      const completedCount = completedTasks.length; // y = completed tasks
+      const progressPercentage = totalTasks > 0 
+        ? Math.round((completedCount / totalTasks) * 100)
+        : 0;
+      
+      // Ensure percentage is between 0 and 100
+      const finalPercentage = Math.min(100, Math.max(0, progressPercentage));
+      
+      // Update progress indicator
+      const progressIndicator = document.getElementById('progress-indicator');
+      if (progressIndicator) {
+        progressIndicator.innerHTML = `
+          <div class="progress-percentage">${finalPercentage}% Complete</div>
+          <div class="progress-text">${completedCount} of ${totalTasks} tasks</div>
+          <div class="progress-bar-container">
+            <div class="progress-bar" style="width: ${finalPercentage}%"></div>
+          </div>
+        `;
+      }
 
       if (tasksList) {
         tasksList.innerHTML = '';
@@ -42,7 +85,20 @@ document.addEventListener('DOMContentLoaded', async () => {
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
           checkbox.id = `task-${task}`;
-          checkbox.checked = todayProgress[task] || false;
+          
+          const taskUrl = taskUrls[task] || '';
+          const hasActivity = todayActivity[task] === true;
+          const timeSpent = todayDurations[task] || 0;
+          const minutesSpent = Math.round(timeSpent / 1000 / 60);
+          
+          // Determine if task is completed:
+          // - Tasks with URLs: completed if hasActivity (10+ min)
+          // - Tasks without URLs: completed if todayProgress[task] is true (manual checkbox)
+          const isCompleted = taskUrl && taskUrl.trim() !== '' 
+            ? hasActivity 
+            : (todayProgress[task] === true);
+          
+          checkbox.checked = isCompleted;
           
           const label = document.createElement('label');
           label.htmlFor = `task-${task}`;
@@ -60,40 +116,50 @@ document.addEventListener('DOMContentLoaded', async () => {
           
           label.appendChild(taskName);
           
-          const taskUrl = taskUrls[task] || '';
-          const hasActivity = todayActivity[task] || false;
-          
-          // If task has a URL but no activity, disable checkbox
-          if (taskUrl && taskUrl.trim() !== '' && !hasActivity) {
-            checkbox.disabled = true;
-            taskItem.classList.add('disabled');
-            const status = document.createElement('span');
-            status.className = 'activity-status';
-            status.textContent = ' (No activity)';
-            status.style.color = '#f44336';
-            status.style.fontSize = '9px';
-            label.appendChild(status);
-          } else if (taskUrl && taskUrl.trim() !== '' && hasActivity) {
-            const status = document.createElement('span');
-            status.className = 'activity-status';
-            status.textContent = ' ✓';
-            status.style.color = '#4CAF50';
-            status.style.fontSize = '9px';
-            label.appendChild(status);
+          // Handle tasks with URLs
+          if (taskUrl && taskUrl.trim() !== '') {
+            if (!hasActivity) {
+              // Task has URL but no activity - disable checkbox and show progress
+              checkbox.disabled = true;
+              taskItem.classList.add('disabled');
+              const status = document.createElement('span');
+              status.className = 'activity-status';
+              if (minutesSpent > 0) {
+                status.textContent = ` (${minutesSpent} min - ${Math.round((timeSpent / (10 * 60 * 1000)) * 100)}%)`;
+                status.style.color = '#FF9800';
+              } else {
+                status.textContent = ' (No activity)';
+                status.style.color = '#f44336';
+              }
+              status.style.fontSize = '9px';
+              label.appendChild(status);
+            } else {
+              // Task has URL and activity - checkbox is enabled and checked
+              checkbox.disabled = false;
+              const status = document.createElement('span');
+              status.className = 'activity-status';
+              status.textContent = ` ✓ (${minutesSpent} min)`;
+              status.style.color = '#4CAF50';
+              status.style.fontSize = '9px';
+              label.appendChild(status);
+            }
           }
 
-          if (checkbox.checked) {
+          if (isCompleted) {
             taskItem.classList.add('completed');
           }
 
           checkbox.addEventListener('change', async () => {
             try {
-              // Check if task has URL but no activity
-              if (taskUrl && taskUrl.trim() !== '' && !hasActivity) {
-                checkbox.checked = false;
+              // For tasks with URLs, completion is based on activity, not manual checkbox
+              // Only allow manual checkbox for tasks without URLs
+              if (taskUrl && taskUrl.trim() !== '') {
+                // Task has URL - completion is controlled by activity only
+                checkbox.checked = hasActivity; // Reset to activity state
                 return;
               }
               
+              // For tasks without URLs, allow manual checkbox
               const result = await chrome.storage.local.get(['progress']);
               const progress = result.progress || {};
               if (!progress[today]) {
@@ -108,7 +174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
 
               await chrome.storage.local.set({ progress });
-              loadData(); // Reload to update UI
+              loadData(); // Reload to update UI and recalculate percentage
             } catch (error) {
               console.error('Error saving progress:', error);
             }
@@ -213,5 +279,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   loadData();
+  
+  // Refresh data every 30 seconds to show updated progress
+  setInterval(() => {
+    loadData();
+  }, 30000);
 });
 
