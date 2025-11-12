@@ -13,6 +13,7 @@
     
     <div class="section">
       <h2>Permanent Tasks (Daily)</h2>
+      <button id="toggle-permanent-edit" class="edit-btn">Edit Permanent Tasks</button>
       <div id="permanent-tasks-container"></div>
     </div>
     
@@ -21,7 +22,7 @@
       <div id="tasks-container"></div>
       <div class="add-task">
         <input type="text" id="new-task-input" placeholder="Enter task name">
-        <select id="task-type-select">
+        <select id="task-type-select" aria-label="Task type">
           <option value="daily">Daily Task (Heatmap)</option>
           <option value="onetime">One-Time Task (Today Only)</option>
         </select>

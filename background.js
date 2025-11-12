@@ -6,29 +6,52 @@ chrome.runtime.onInstalled.addListener(() => {
 
   // Initialize permanent tasks and their URLs
   chrome.storage.local.get(['permanentTasks', 'taskUrls', 'taskTypes'], (result) => {
-    const permanentTasks = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
-    const permanentUrls = {
+    const defaultPermanentTasks = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+    const defaultPermanentUrls = {
       'LeetCode': 'https://leetcode.com',
       'GRE Practice': 'https://www.ets.org/gre',
       'ML Practice': '',
       'Maths': ''
     };
-    
-    // Initialize permanent tasks (always daily tasks)
+
+    let storedPermanentTasks = Array.isArray(result.permanentTasks) ? [...result.permanentTasks] : [];
     const taskTypes = result.taskTypes || {};
-    permanentTasks.forEach(task => {
-      taskTypes[task] = 'daily';
-    });
-    
-    // Merge with existing URLs
     const taskUrls = result.taskUrls || {};
-    Object.assign(taskUrls, permanentUrls);
-    
-    chrome.storage.local.set({ 
-      permanentTasks: permanentTasks,
-      taskUrls: taskUrls,
-      taskTypes: taskTypes
+
+    // If no stored permanent tasks, start with defaults
+    if (storedPermanentTasks.length === 0) {
+      storedPermanentTasks = [...defaultPermanentTasks];
+      shouldPersist = true;
+    }
+
+    // Ensure defaults are present at least once
+    defaultPermanentTasks.forEach(task => {
+      if (!storedPermanentTasks.includes(task)) {
+        storedPermanentTasks.push(task);
+        shouldPersist = true;
+      }
     });
+
+    // Ensure permanent tasks have daily type and default URLs if missing
+    let shouldPersist = false;
+    storedPermanentTasks.forEach(task => {
+      if (taskTypes[task] !== 'daily') {
+        taskTypes[task] = 'daily';
+        shouldPersist = true;
+      }
+      if (taskUrls[task] === undefined && defaultPermanentUrls[task] !== undefined) {
+        taskUrls[task] = defaultPermanentUrls[task];
+        shouldPersist = true;
+      }
+    });
+
+    if (shouldPersist || result.permanentTasks === undefined) {
+      chrome.storage.local.set({ 
+        permanentTasks: storedPermanentTasks,
+        taskUrls,
+        taskTypes
+      });
+    }
   });
 });
 
