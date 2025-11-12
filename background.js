@@ -18,6 +18,7 @@ chrome.runtime.onInstalled.addListener(() => {
     let storedPermanentTasks = Array.isArray(result.permanentTasks) ? [...result.permanentTasks] : [];
     const taskTypes = result.taskTypes || {};
     const taskUrls = result.taskUrls || {};
+    let shouldPersist = false;
 
     // If no stored permanent tasks, start with defaults
     if (storedPermanentTasks.length === 0) {
@@ -34,7 +35,6 @@ chrome.runtime.onInstalled.addListener(() => {
     });
 
     // Ensure permanent tasks have daily type and default URLs if missing
-    let shouldPersist = false;
     storedPermanentTasks.forEach(task => {
       if (taskTypes[task] !== 'daily') {
         taskTypes[task] = 'daily';
