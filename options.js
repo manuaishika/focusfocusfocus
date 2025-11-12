@@ -15,11 +15,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const PERMANENT_DEFAULTS = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
 
+  const remindersList = document.getElementById('reminders-list');
+  const addReminderBtn = document.getElementById('add-reminder-btn');
+  const remindersEnabledCheckbox = document.getElementById('reminders-enabled');
+
   let currentPermanentTasks = [];
   let currentCustomTasks = [];
   let currentTaskUrls = {};
   let currentTaskTypes = {};
   let editingPermanent = false;
+  let reminderTimes = [];
+  let remindersEnabled = true;
 
   function updateEditButtonLabel() {
     if (!togglePermanentEditBtn) return;
@@ -291,5 +297,129 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Reminders functionality
+  async function loadReminders() {
+    try {
+      const result = await chrome.storage.local.get(['reminderTimes', 'remindersEnabled']);
+      reminderTimes = result.reminderTimes || [];
+      remindersEnabled = result.remindersEnabled !== false; // Default to true
+      
+      if (remindersEnabledCheckbox) {
+        remindersEnabledCheckbox.checked = remindersEnabled;
+      }
+      
+      renderReminders();
+    } catch (error) {
+      console.error('Error loading reminders:', error);
+    }
+  }
+
+  function renderReminders() {
+    if (!remindersList) return;
+    remindersList.innerHTML = '';
+    
+    if (reminderTimes.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'empty-message';
+      empty.textContent = 'No reminders set. Add reminder times above.';
+      remindersList.appendChild(empty);
+      return;
+    }
+    
+    reminderTimes.forEach((time, index) => {
+      const reminderItem = document.createElement('div');
+      reminderItem.className = 'reminder-item';
+      
+      const timeInput = document.createElement('input');
+      timeInput.type = 'time';
+      timeInput.value = time;
+      timeInput.className = 'reminder-time-input';
+      timeInput.addEventListener('change', async () => {
+        reminderTimes[index] = timeInput.value;
+        await chrome.storage.local.set({ reminderTimes });
+        scheduleReminders();
+      });
+      
+      const timeLabel = document.createElement('div');
+      timeLabel.className = 'reminder-time';
+      timeLabel.appendChild(timeInput);
+      
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'remove-reminder-btn';
+      removeBtn.textContent = 'Remove';
+      removeBtn.addEventListener('click', async () => {
+        reminderTimes.splice(index, 1);
+        await chrome.storage.local.set({ reminderTimes });
+        await loadReminders();
+        scheduleReminders();
+      });
+      
+      reminderItem.appendChild(timeLabel);
+      reminderItem.appendChild(removeBtn);
+      remindersList.appendChild(reminderItem);
+    });
+  }
+
+  async function scheduleReminders() {
+    if (!remindersEnabled || reminderTimes.length === 0) {
+      // Clear all reminder alarms
+      const alarms = await chrome.alarms.getAll();
+      alarms.forEach(alarm => {
+        if (alarm.name.startsWith('reminder_')) {
+          chrome.alarms.clear(alarm.name);
+        }
+      });
+      return;
+    }
+    
+    // Clear existing reminder alarms
+    const alarms = await chrome.alarms.getAll();
+    alarms.forEach(alarm => {
+      if (alarm.name.startsWith('reminder_')) {
+        chrome.alarms.clear(alarm.name);
+      }
+    });
+    
+    // Schedule new reminders
+    const now = new Date();
+    reminderTimes.forEach((time, index) => {
+      const [hours, minutes] = time.split(':').map(Number);
+      const reminderTime = new Date();
+      reminderTime.setHours(hours, minutes, 0, 0);
+      
+      // If time has passed today, schedule for tomorrow
+      if (reminderTime <= now) {
+        reminderTime.setDate(reminderTime.getDate() + 1);
+      }
+      
+      chrome.alarms.create(`reminder_${index}`, {
+        when: reminderTime.getTime(),
+        periodInMinutes: 60 * 24 // Repeat daily
+      });
+    });
+  }
+
+  if (addReminderBtn) {
+    addReminderBtn.addEventListener('click', async () => {
+      const defaultTime = new Date();
+      defaultTime.setHours(9, 0, 0, 0); // Default to 9:00 AM
+      const timeStr = `${String(defaultTime.getHours()).padStart(2, '0')}:${String(defaultTime.getMinutes()).padStart(2, '0')}`;
+      
+      reminderTimes.push(timeStr);
+      await chrome.storage.local.set({ reminderTimes });
+      await loadReminders();
+      await scheduleReminders();
+    });
+  }
+
+  if (remindersEnabledCheckbox) {
+    remindersEnabledCheckbox.addEventListener('change', async () => {
+      remindersEnabled = remindersEnabledCheckbox.checked;
+      await chrome.storage.local.set({ remindersEnabled });
+      await scheduleReminders();
+    });
+  }
+
   loadTasks();
+  loadReminders();
 });

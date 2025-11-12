@@ -53,7 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           // Show task type badge for custom tasks
           if (taskType === 'onetime') {
             const badge = document.createElement('span');
-            badge.style.cssText = 'background: #FF9800; color: white; padding: 2px 6px; border-radius: 3px; font-size: 9px; margin-left: 6px; font-weight: 500;';
+            badge.style.cssText = 'background: #FF9800; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
             badge.textContent = 'One-Time';
             taskName.appendChild(badge);
           }
@@ -71,14 +71,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             status.className = 'activity-status';
             status.textContent = ' (No activity)';
             status.style.color = '#f44336';
-            status.style.fontSize = '11px';
+            status.style.fontSize = '9px';
             label.appendChild(status);
           } else if (taskUrl && taskUrl.trim() !== '' && hasActivity) {
             const status = document.createElement('span');
             status.className = 'activity-status';
             status.textContent = ' ✓';
             status.style.color = '#4CAF50';
-            status.style.fontSize = '11px';
+            status.style.fontSize = '9px';
             label.appendChild(status);
           }
 
