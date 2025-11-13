@@ -39,42 +39,36 @@ document.addEventListener('DOMContentLoaded', async () => {
       const yesterdayProgress = progress[yesterdayStr] || {};
       const yesterdayActivity = websiteActivity[yesterdayStr] || {};
       
-      // Find yesterday's incomplete tasks (only daily tasks)
-      const yesterdayIncomplete = allTasks.filter(task => {
-        const taskType = taskTypes[task] || 'daily';
-        if (taskType !== 'daily') return false; // Only track daily tasks across days
-        
-        const taskUrl = taskUrls[task] || '';
-        const wasCompletedYesterday = taskUrl && taskUrl.trim() !== ''
-          ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
-          : (yesterdayProgress[task] === true);
-        
-        return !wasCompletedYesterday;
-      });
-
-      // Filter out completed tasks from active list (they go to archive)
-      // Keep: incomplete tasks, yesterday's incomplete tasks, and today's incomplete tasks
+      // Active tasks logic:
+      // - Show ALL tasks (daily and one-time) - don't remove completed ones, just strike them off
+      // - For one-time tasks: remove if completed YESTERDAY (past day), keep if incomplete yesterday
+      // - For daily tasks: always show (permanent)
+      // - Completed tasks stay in list with strikethrough until day passes
       const activeTasks = allTasks.filter(task => {
-        const taskUrl = taskUrls[task] || '';
-        const isManuallyCompleted = todayProgress[task] === true;
-        const hasActivity = todayActivity[task] === true;
         const taskType = taskTypes[task] || 'daily';
+        const taskUrl = taskUrls[task] || '';
         
-        // Check if task is completed today
-        const isCompletedToday = taskUrl && taskUrl.trim() !== ''
-          ? (hasActivity || isManuallyCompleted)
-          : isManuallyCompleted;
-        
-        // Don't show completed tasks in active list (they're archived)
-        // Show: incomplete tasks, one-time tasks that aren't completed, and yesterday's incomplete
-        if (isCompletedToday && taskType === 'daily') {
-          return false; // Completed daily tasks are removed from active list
+        // Daily tasks: always show (permanent)
+        if (taskType === 'daily') {
+          return true; // Always show daily tasks
         }
         
-        return true; // Show all other tasks
+        // One-time tasks: 
+        // - Remove if completed YESTERDAY (past day - done, don't show)
+        // - Keep if incomplete yesterday (carry forward) OR completed today (show with strikethrough)
+        if (taskType === 'onetime') {
+          const wasCompletedYesterday = taskUrl && taskUrl.trim() !== ''
+            ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
+            : (yesterdayProgress[task] === true);
+          
+          // Remove only if completed yesterday (past day), keep otherwise
+          return !wasCompletedYesterday;
+        }
+        
+        return false;
       });
       
-      // Calculate progress percentage (only count active/incomplete tasks)
+      // Calculate progress percentage (count all active tasks, including completed ones)
       const totalTasks = activeTasks.length; // x = total active tasks
       const completedTasks = activeTasks.filter(task => {
         const taskUrl = taskUrls[task] || '';
@@ -112,36 +106,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (tasksList) {
         tasksList.innerHTML = '';
         
-        // Show yesterday's incomplete tasks first with special indicator
-        if (yesterdayIncomplete.length > 0) {
-          const yesterdaySection = document.createElement('div');
-          yesterdaySection.className = 'yesterday-section';
-          const yesterdayHeader = document.createElement('div');
-          yesterdayHeader.className = 'yesterday-header';
-          yesterdayHeader.textContent = `From Yesterday (${yesterdayIncomplete.length})`;
-          yesterdaySection.appendChild(yesterdayHeader);
-          
-          yesterdayIncomplete.forEach(task => {
-            // Only show if not already completed today
-            const taskUrl = taskUrls[task] || '';
-            const isCompletedToday = taskUrl && taskUrl.trim() !== ''
-              ? (todayActivity[task] === true || todayProgress[task] === true)
-              : (todayProgress[task] === true);
-            
-            if (!isCompletedToday && activeTasks.includes(task)) {
-              const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, yesterdayIncomplete);
-              yesterdaySection.appendChild(taskItem);
-            }
-          });
-          
-          tasksList.appendChild(yesterdaySection);
-        }
-        
-        // Show today's active tasks (excluding yesterday's incomplete which are shown above)
-        const todayTasks = activeTasks.filter(task => !yesterdayIncomplete.includes(task));
-        
-        todayTasks.forEach(task => {
-          const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, []);
+        // Show all active tasks (daily tasks always shown, one-time tasks only if incomplete)
+        activeTasks.forEach(task => {
+          const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations);
           tasksList.appendChild(taskItem);
         });
       }
@@ -153,14 +120,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   
-  function createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, yesterdayIncomplete) {
+  function createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations) {
     const taskType = taskTypes[task] || 'daily';
     const taskItem = document.createElement('div');
     taskItem.className = 'task-item';
-    const isFromYesterday = yesterdayIncomplete.includes(task);
-    if (isFromYesterday) {
-      taskItem.classList.add('from-yesterday');
-    }
     
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
@@ -186,15 +149,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const taskName = document.createElement('span');
     taskName.textContent = task;
     
-    // Show "From Yesterday" badge
-    if (isFromYesterday) {
-      const yesterdayBadge = document.createElement('span');
-      yesterdayBadge.style.cssText = 'background: #FF9800; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
-      yesterdayBadge.textContent = 'From Yesterday';
-      taskName.appendChild(yesterdayBadge);
-    }
-    
-    // Show task type badge for custom tasks
+    // Show task type badge ONLY for one-time tasks (not for daily/permanent)
     if (taskType === 'onetime') {
       const badge = document.createElement('span');
       badge.style.cssText = 'background: #FF9800; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';

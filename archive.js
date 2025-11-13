@@ -25,19 +25,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (archiveContainer) {
         archiveContainer.innerHTML = '';
 
-        // Use archive data if available, otherwise fall back to progress data
-        const archiveDates = Object.keys(archive).length > 0 
-          ? Object.keys(archive).sort().reverse()
-          : Object.keys(progress).sort().reverse();
+        // Get all dates from progress and archive, combine them
+        const progressDates = Object.keys(progress).sort().reverse();
+        const archiveDates = Object.keys(archive).sort().reverse();
+        const allDates = [...new Set([...progressDates, ...archiveDates])].sort().reverse();
         
-        // Calculate statistics
-        const totalDays = archiveDates.length;
+        // Calculate statistics from all dates (past and present)
+        const totalDays = allDates.length;
         let totalCompletions = 0;
         const taskCounts = {};
         
-        archiveDates.forEach(date => {
-          // Get completed tasks from archive first, then fall back to progress
-          const completedTasks = archive[date] || Object.keys(progress[date] || {}).filter(task => progress[date][task]) || [];
+        allDates.forEach(date => {
+          // Get completed tasks: prefer archive, then check progress/activity
+          let completedTasks = [];
+          if (archive[date] && archive[date].length > 0) {
+            completedTasks = archive[date];
+          } else {
+            // Fall back to progress/activity data
+            const dateProgress = progress[date] || {};
+            const dateActivity = websiteActivity[date] || {};
+            completedTasks = allTasks.filter(task => {
+              const taskUrl = taskUrls[task] || '';
+              if (taskUrl && taskUrl.trim() !== '') {
+                return dateActivity[task] === true || dateProgress[task] === true;
+              } else {
+                return dateProgress[task] === true;
+              }
+            });
+          }
           totalCompletions += completedTasks.length;
           completedTasks.forEach(task => {
             taskCounts[task] = (taskCounts[task] || 0) + 1;
@@ -75,10 +90,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         statsDiv.appendChild(avgStat);
         archiveContainer.appendChild(statsDiv);
 
-        // Filter dates
-        let displayDates = archiveDates;
+        // Filter dates (show all dates, not just today)
+        let displayDates = allDates;
         if (selectedDate) {
-          displayDates = archiveDates.filter(date => date === selectedDate);
+          displayDates = allDates.filter(date => date === selectedDate);
         }
 
         if (displayDates.length === 0) {
