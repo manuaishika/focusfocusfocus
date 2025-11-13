@@ -33,7 +33,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         // Calculate statistics from all dates (past and present)
         const totalDays = allDates.length;
         let totalCompletions = 0;
+        let totalTasks = 0; // Track total tasks across all days
         const taskCounts = {};
+        const dailyStats = []; // Store tasks and completions per day
         
         allDates.forEach(date => {
           // Get completed tasks: prefer archive, then check progress/activity
@@ -53,11 +55,71 @@ document.addEventListener('DOMContentLoaded', async () => {
               }
             });
           }
-          totalCompletions += completedTasks.length;
+          
+          // Count total tasks for this day (all tasks that existed on this day)
+          // This includes both completed and incomplete tasks
+          const dateProgress = progress[date] || {};
+          const dateActivity = websiteActivity[date] || {};
+          
+          // For today, use the current task list (all active tasks)
+          // For past days, reconstruct what tasks existed
+          const today = new Date().toISOString().split('T')[0];
+          let tasksOnThisDay = [];
+          
+          if (date === today) {
+            // For today, count all current tasks (daily + one-time that haven't been removed)
+            tasksOnThisDay = allTasks.filter(task => {
+              const taskType = taskTypes[task] || 'daily';
+              if (taskType === 'daily') return true;
+              // For one-time tasks, check if they were completed yesterday
+              const taskUrl = taskUrls[task] || '';
+              const yesterday = new Date();
+              yesterday.setDate(yesterday.getDate() - 1);
+              const yesterdayStr = yesterday.toISOString().split('T')[0];
+              const yesterdayProgress = progress[yesterdayStr] || {};
+              const yesterdayActivity = websiteActivity[yesterdayStr] || {};
+              const wasCompletedYesterday = taskUrl && taskUrl.trim() !== ''
+                ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
+                : (yesterdayProgress[task] === true);
+              return !wasCompletedYesterday; // Show if not completed yesterday
+            });
+          } else {
+            // For past days, count:
+            // 1. All daily tasks (they always exist)
+            // 2. One-time tasks that were completed on that day
+            // 3. One-time tasks that appear in progress (attempted but maybe not completed)
+            const dailyTasks = allTasks.filter(task => (taskTypes[task] || 'daily') === 'daily');
+            const oneTimeTasksOnDay = allTasks.filter(task => {
+              const taskType = taskTypes[task] || 'daily';
+              if (taskType !== 'onetime') return false;
+              // Count one-time tasks that were completed or attempted on this day
+              return completedTasks.includes(task) || 
+                     dateProgress[task] !== undefined || 
+                     dateActivity[task] !== undefined;
+            });
+            tasksOnThisDay = [...dailyTasks, ...oneTimeTasksOnDay];
+          }
+          
+          const tasksCount = tasksOnThisDay.length;
+          const completionsCount = completedTasks.length;
+          
+          totalTasks += tasksCount;
+          totalCompletions += completionsCount;
+          
+          dailyStats.push({
+            date,
+            tasks: tasksCount,
+            completions: completionsCount
+          });
+          
           completedTasks.forEach(task => {
             taskCounts[task] = (taskCounts[task] || 0) + 1;
           });
         });
+        
+        const avgTasksPerDay = totalDays > 0 ? (totalTasks / totalDays).toFixed(1) : '0';
+        const avgCompletionsPerDay = totalDays > 0 ? (totalCompletions / totalDays).toFixed(1) : '0';
+        const avgCompletionRate = totalTasks > 0 ? ((totalCompletions / totalTasks) * 100).toFixed(1) : '0';
 
         // Show statistics
         const statsDiv = document.createElement('div');
@@ -70,6 +132,13 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="stat-label">Days Tracked</div>
         `;
         
+        const totalTasksStat = document.createElement('div');
+        totalTasksStat.className = 'stat-item';
+        totalTasksStat.innerHTML = `
+          <div class="stat-value">${totalTasks}</div>
+          <div class="stat-label">Total Tasks</div>
+        `;
+        
         const totalCompletionsStat = document.createElement('div');
         totalCompletionsStat.className = 'stat-item';
         totalCompletionsStat.innerHTML = `
@@ -77,17 +146,33 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="stat-label">Total Completions</div>
         `;
         
-        const avgPerDay = totalDays > 0 ? (totalCompletions / totalDays).toFixed(1) : '0';
-        const avgStat = document.createElement('div');
-        avgStat.className = 'stat-item';
-        avgStat.innerHTML = `
-          <div class="stat-value">${avgPerDay}</div>
-          <div class="stat-label">Avg per Day</div>
+        const avgTasksStat = document.createElement('div');
+        avgTasksStat.className = 'stat-item';
+        avgTasksStat.innerHTML = `
+          <div class="stat-value">${avgTasksPerDay}</div>
+          <div class="stat-label">Avg Tasks/Day</div>
+        `;
+        
+        const avgCompletionsStat = document.createElement('div');
+        avgCompletionsStat.className = 'stat-item';
+        avgCompletionsStat.innerHTML = `
+          <div class="stat-value">${avgCompletionsPerDay}</div>
+          <div class="stat-label">Avg Completions/Day</div>
+        `;
+        
+        const completionRateStat = document.createElement('div');
+        completionRateStat.className = 'stat-item';
+        completionRateStat.innerHTML = `
+          <div class="stat-value">${avgCompletionRate}%</div>
+          <div class="stat-label">Completion Rate</div>
         `;
         
         statsDiv.appendChild(totalDaysStat);
+        statsDiv.appendChild(totalTasksStat);
         statsDiv.appendChild(totalCompletionsStat);
-        statsDiv.appendChild(avgStat);
+        statsDiv.appendChild(avgTasksStat);
+        statsDiv.appendChild(avgCompletionsStat);
+        statsDiv.appendChild(completionRateStat);
         archiveContainer.appendChild(statsDiv);
 
         // Filter dates (show all dates, not just today)
@@ -123,6 +208,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           const tasksDiv = document.createElement('div');
           tasksDiv.className = 'archive-tasks';
+          
+          // Show day summary (tasks vs completions)
+          const daySummary = document.createElement('div');
+          daySummary.className = 'archive-day-summary';
+          const dayStat = dailyStats.find(stat => stat.date === date);
+          if (dayStat) {
+            daySummary.textContent = `${dayStat.completions} of ${dayStat.tasks} tasks completed`;
+            daySummary.style.cssText = 'font-size: 12px; color: #666; margin-bottom: 10px; font-style: italic;';
+            tasksDiv.appendChild(daySummary);
+          }
 
           // Get completed tasks from archive, or fall back to progress/activity
           let completedTasks = [];
