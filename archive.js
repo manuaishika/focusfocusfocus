@@ -12,28 +12,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadArchive(selectedDate = null) {
     try {
-      const result = await chrome.storage.local.get(['progress', 'permanentTasks', 'tasks', 'taskTypes']);
+      const result = await chrome.storage.local.get(['archive', 'progress', 'websiteActivity', 'permanentTasks', 'tasks', 'taskTypes', 'taskUrls']);
+      const archive = result.archive || {};
       const progress = result.progress || {};
+      const websiteActivity = result.websiteActivity || {};
       const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
       const customTasks = result.tasks || [];
       const allTasks = [...permanentTasks, ...customTasks];
       const taskTypes = result.taskTypes || {};
+      const taskUrls = result.taskUrls || {};
 
       if (archiveContainer) {
         archiveContainer.innerHTML = '';
 
+        // Use archive data if available, otherwise fall back to progress data
+        const archiveDates = Object.keys(archive).length > 0 
+          ? Object.keys(archive).sort().reverse()
+          : Object.keys(progress).sort().reverse();
+        
         // Calculate statistics
-        const dates = Object.keys(progress).sort().reverse();
-        const totalDays = dates.length;
+        const totalDays = archiveDates.length;
         let totalCompletions = 0;
         const taskCounts = {};
         
-        dates.forEach(date => {
-          Object.keys(progress[date]).forEach(task => {
-            if (progress[date][task]) {
-              totalCompletions++;
-              taskCounts[task] = (taskCounts[task] || 0) + 1;
-            }
+        archiveDates.forEach(date => {
+          // Get completed tasks from archive first, then fall back to progress
+          const completedTasks = archive[date] || Object.keys(progress[date] || {}).filter(task => progress[date][task]) || [];
+          totalCompletions += completedTasks.length;
+          completedTasks.forEach(task => {
+            taskCounts[task] = (taskCounts[task] || 0) + 1;
           });
         });
 
@@ -69,9 +76,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         archiveContainer.appendChild(statsDiv);
 
         // Filter dates
-        let displayDates = dates;
+        let displayDates = archiveDates;
         if (selectedDate) {
-          displayDates = dates.filter(date => date === selectedDate);
+          displayDates = archiveDates.filter(date => date === selectedDate);
         }
 
         if (displayDates.length === 0) {
@@ -102,7 +109,23 @@ document.addEventListener('DOMContentLoaded', async () => {
           const tasksDiv = document.createElement('div');
           tasksDiv.className = 'archive-tasks';
 
-          const completedTasks = Object.keys(progress[date]).filter(task => progress[date][task]);
+          // Get completed tasks from archive, or fall back to progress/activity
+          let completedTasks = [];
+          if (archive[date] && archive[date].length > 0) {
+            completedTasks = archive[date];
+          } else {
+            // Fall back to progress data
+            const dateProgress = progress[date] || {};
+            const dateActivity = websiteActivity[date] || {};
+            completedTasks = allTasks.filter(task => {
+              const taskUrl = taskUrls[task] || '';
+              if (taskUrl && taskUrl.trim() !== '') {
+                return dateActivity[task] === true || dateProgress[task] === true;
+              } else {
+                return dateProgress[task] === true;
+              }
+            });
+          }
           
           if (completedTasks.length === 0) {
             const noTasks = document.createElement('div');

@@ -16,11 +16,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
   const PERMANENT_TASKS = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
 
   async function loadData() {
     try {
-      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskUrls', 'websiteActivity', 'taskTypes', 'websiteActivityDurations']);
+      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskUrls', 'websiteActivity', 'taskTypes', 'websiteActivityDurations', 'archive']);
       const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
       const customTasks = result.tasks || [];
       const allTasks = [...permanentTasks, ...customTasks];
@@ -29,26 +32,58 @@ document.addEventListener('DOMContentLoaded', async () => {
       const websiteActivity = result.websiteActivity || {};
       const websiteActivityDurations = result.websiteActivityDurations || {};
       const taskTypes = result.taskTypes || {};
+      const archive = result.archive || {};
       const todayProgress = progress[today] || {};
       const todayActivity = websiteActivity[today] || {};
       const todayDurations = websiteActivityDurations[today] || {};
-
-      // Calculate progress percentage
-      // Count ALL tasks (daily + one-time) for total
-      // Count completed tasks (can be completed via activity OR manual checkbox)
-      const totalTasks = allTasks.length; // x = total tasks (all types)
-      const completedTasks = allTasks.filter(task => {
+      const yesterdayProgress = progress[yesterdayStr] || {};
+      const yesterdayActivity = websiteActivity[yesterdayStr] || {};
+      
+      // Find yesterday's incomplete tasks (only daily tasks)
+      const yesterdayIncomplete = allTasks.filter(task => {
+        const taskType = taskTypes[task] || 'daily';
+        if (taskType !== 'daily') return false; // Only track daily tasks across days
+        
         const taskUrl = taskUrls[task] || '';
-        // Check if task is manually marked as complete (checkbox checked)
+        const wasCompletedYesterday = taskUrl && taskUrl.trim() !== ''
+          ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
+          : (yesterdayProgress[task] === true);
+        
+        return !wasCompletedYesterday;
+      });
+
+      // Filter out completed tasks from active list (they go to archive)
+      // Keep: incomplete tasks, yesterday's incomplete tasks, and today's incomplete tasks
+      const activeTasks = allTasks.filter(task => {
+        const taskUrl = taskUrls[task] || '';
         const isManuallyCompleted = todayProgress[task] === true;
-        // Check if task has activity (for URL-based tasks)
+        const hasActivity = todayActivity[task] === true;
+        const taskType = taskTypes[task] || 'daily';
+        
+        // Check if task is completed today
+        const isCompletedToday = taskUrl && taskUrl.trim() !== ''
+          ? (hasActivity || isManuallyCompleted)
+          : isManuallyCompleted;
+        
+        // Don't show completed tasks in active list (they're archived)
+        // Show: incomplete tasks, one-time tasks that aren't completed, and yesterday's incomplete
+        if (isCompletedToday && taskType === 'daily') {
+          return false; // Completed daily tasks are removed from active list
+        }
+        
+        return true; // Show all other tasks
+      });
+      
+      // Calculate progress percentage (only count active/incomplete tasks)
+      const totalTasks = activeTasks.length; // x = total active tasks
+      const completedTasks = activeTasks.filter(task => {
+        const taskUrl = taskUrls[task] || '';
+        const isManuallyCompleted = todayProgress[task] === true;
         const hasActivity = todayActivity[task] === true;
         
         if (taskUrl && taskUrl.trim() !== '') {
-          // For tasks with URLs, completed if has activity OR manually checked
           return hasActivity || isManuallyCompleted;
         } else {
-          // For manual tasks, completed if checkbox is checked
           return isManuallyCompleted;
         }
       });
@@ -76,112 +111,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (tasksList) {
         tasksList.innerHTML = '';
-
-        allTasks.forEach(task => {
-          const taskType = taskTypes[task] || 'daily';
-          const taskItem = document.createElement('div');
-          taskItem.className = 'task-item';
+        
+        // Show yesterday's incomplete tasks first with special indicator
+        if (yesterdayIncomplete.length > 0) {
+          const yesterdaySection = document.createElement('div');
+          yesterdaySection.className = 'yesterday-section';
+          const yesterdayHeader = document.createElement('div');
+          yesterdayHeader.className = 'yesterday-header';
+          yesterdayHeader.textContent = `From Yesterday (${yesterdayIncomplete.length})`;
+          yesterdaySection.appendChild(yesterdayHeader);
           
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.id = `task-${task}`;
-          
-          const taskUrl = taskUrls[task] || '';
-          const hasActivity = todayActivity[task] === true;
-          const timeSpent = todayDurations[task] || 0;
-          const minutesSpent = Math.round(timeSpent / 1000 / 60);
-          
-          // Determine if task is completed:
-          // - Tasks with URLs: completed if hasActivity (10+ min)
-          // - Tasks without URLs: completed if todayProgress[task] is true (manual checkbox)
-          const isCompleted = taskUrl && taskUrl.trim() !== '' 
-            ? hasActivity 
-            : (todayProgress[task] === true);
-          
-          checkbox.checked = isCompleted;
-          
-          const label = document.createElement('label');
-          label.htmlFor = `task-${task}`;
-          
-          const taskName = document.createElement('span');
-          taskName.textContent = task;
-          
-          // Show task type badge for custom tasks
-          if (taskType === 'onetime') {
-            const badge = document.createElement('span');
-            badge.style.cssText = 'background: #FF9800; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
-            badge.textContent = 'One-Time';
-            taskName.appendChild(badge);
-          }
-          
-          label.appendChild(taskName);
-          
-          // Handle tasks with URLs
-          if (taskUrl && taskUrl.trim() !== '') {
-            if (!hasActivity) {
-              // Task has URL but no activity - disable checkbox and show progress
-              checkbox.disabled = true;
-              taskItem.classList.add('disabled');
-              const status = document.createElement('span');
-              status.className = 'activity-status';
-              if (minutesSpent > 0) {
-                status.textContent = ` (${minutesSpent} min - ${Math.round((timeSpent / (10 * 60 * 1000)) * 100)}%)`;
-                status.style.color = '#FF9800';
-              } else {
-                status.textContent = ' (No activity)';
-                status.style.color = '#f44336';
-              }
-              status.style.fontSize = '9px';
-              label.appendChild(status);
-            } else {
-              // Task has URL and activity - checkbox is enabled and checked
-              checkbox.disabled = false;
-              const status = document.createElement('span');
-              status.className = 'activity-status';
-              status.textContent = ` ✓ (${minutesSpent} min)`;
-              status.style.color = '#4CAF50';
-              status.style.fontSize = '9px';
-              label.appendChild(status);
-            }
-          }
-
-          if (isCompleted) {
-            taskItem.classList.add('completed');
-          }
-
-          checkbox.addEventListener('change', async () => {
-            try {
-              // For tasks with URLs, completion is based on activity, not manual checkbox
-              // Only allow manual checkbox for tasks without URLs
-              if (taskUrl && taskUrl.trim() !== '') {
-                // Task has URL - completion is controlled by activity only
-                checkbox.checked = hasActivity; // Reset to activity state
-                return;
-              }
-              
-              // For tasks without URLs, allow manual checkbox
-              const result = await chrome.storage.local.get(['progress']);
-              const progress = result.progress || {};
-              if (!progress[today]) {
-                progress[today] = {};
-              }
-              progress[today][task] = checkbox.checked;
-              
-              if (checkbox.checked) {
-                taskItem.classList.add('completed');
-              } else {
-                taskItem.classList.remove('completed');
-              }
-
-              await chrome.storage.local.set({ progress });
-              loadData(); // Reload to update UI and recalculate percentage
-            } catch (error) {
-              console.error('Error saving progress:', error);
+          yesterdayIncomplete.forEach(task => {
+            // Only show if not already completed today
+            const taskUrl = taskUrls[task] || '';
+            const isCompletedToday = taskUrl && taskUrl.trim() !== ''
+              ? (todayActivity[task] === true || todayProgress[task] === true)
+              : (todayProgress[task] === true);
+            
+            if (!isCompletedToday && activeTasks.includes(task)) {
+              const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, yesterdayIncomplete);
+              yesterdaySection.appendChild(taskItem);
             }
           });
-
-          taskItem.appendChild(checkbox);
-          taskItem.appendChild(label);
+          
+          tasksList.appendChild(yesterdaySection);
+        }
+        
+        // Show today's active tasks (excluding yesterday's incomplete which are shown above)
+        const todayTasks = activeTasks.filter(task => !yesterdayIncomplete.includes(task));
+        
+        todayTasks.forEach(task => {
+          const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, []);
           tasksList.appendChild(taskItem);
         });
       }
@@ -192,6 +152,176 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error('Error loading data:', error);
     }
   }
+  
+  function createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, yesterdayIncomplete) {
+    const taskType = taskTypes[task] || 'daily';
+    const taskItem = document.createElement('div');
+    taskItem.className = 'task-item';
+    const isFromYesterday = yesterdayIncomplete.includes(task);
+    if (isFromYesterday) {
+      taskItem.classList.add('from-yesterday');
+    }
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = `task-${task}`;
+    
+    const taskUrl = taskUrls[task] || '';
+    const hasActivity = todayActivity[task] === true;
+    const timeSpent = todayDurations[task] || 0;
+    const minutesSpent = Math.round(timeSpent / 1000 / 60);
+    
+    // Determine if task is completed:
+    // - Tasks with URLs: completed if hasActivity (10+ min)
+    // - Tasks without URLs: completed if todayProgress[task] is true (manual checkbox)
+    const isCompleted = taskUrl && taskUrl.trim() !== '' 
+      ? hasActivity 
+      : (todayProgress[task] === true);
+    
+    checkbox.checked = isCompleted;
+    
+    const label = document.createElement('label');
+    label.htmlFor = `task-${task}`;
+    
+    const taskName = document.createElement('span');
+    taskName.textContent = task;
+    
+    // Show "From Yesterday" badge
+    if (isFromYesterday) {
+      const yesterdayBadge = document.createElement('span');
+      yesterdayBadge.style.cssText = 'background: #FF9800; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
+      yesterdayBadge.textContent = 'From Yesterday';
+      taskName.appendChild(yesterdayBadge);
+    }
+    
+    // Show task type badge for custom tasks
+    if (taskType === 'onetime') {
+      const badge = document.createElement('span');
+      badge.style.cssText = 'background: #FF9800; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
+      badge.textContent = 'One-Time';
+      taskName.appendChild(badge);
+    }
+    
+    label.appendChild(taskName);
+    
+    // Handle tasks with URLs
+    if (taskUrl && taskUrl.trim() !== '') {
+      if (!hasActivity) {
+        // Task has URL but no activity - disable checkbox and show progress
+        checkbox.disabled = true;
+        taskItem.classList.add('disabled');
+        const status = document.createElement('span');
+        status.className = 'activity-status';
+        if (minutesSpent > 0) {
+          status.textContent = ` (${minutesSpent} min - ${Math.round((timeSpent / (10 * 60 * 1000)) * 100)}%)`;
+          status.style.color = '#FF9800';
+        } else {
+          status.textContent = ' (No activity)';
+          status.style.color = '#f44336';
+        }
+        status.style.fontSize = '9px';
+        label.appendChild(status);
+      } else {
+        // Task has URL and activity - checkbox is enabled and checked
+        checkbox.disabled = false;
+        const status = document.createElement('span');
+        status.className = 'activity-status';
+        status.textContent = ` ✓ (${minutesSpent} min)`;
+        status.style.color = '#4CAF50';
+        status.style.fontSize = '9px';
+        label.appendChild(status);
+      }
+    }
+
+    if (isCompleted) {
+      taskItem.classList.add('completed');
+    }
+
+    checkbox.addEventListener('change', async () => {
+      try {
+        // For tasks with URLs, completion is based on activity, not manual checkbox
+        // Only allow manual checkbox for tasks without URLs
+        if (taskUrl && taskUrl.trim() !== '') {
+          // Task has URL - completion is controlled by activity only
+          checkbox.checked = hasActivity; // Reset to activity state
+          return;
+        }
+        
+        // For tasks without URLs, allow manual checkbox
+        const result = await chrome.storage.local.get(['progress', 'archive']);
+        const progress = result.progress || {};
+        const archive = result.archive || {};
+        if (!progress[today]) {
+          progress[today] = {};
+        }
+        progress[today][task] = checkbox.checked;
+        
+        // If task is completed, add to archive
+        if (checkbox.checked) {
+          if (!archive[today]) {
+            archive[today] = [];
+          }
+          // Add to archive if not already there
+          if (!archive[today].includes(task)) {
+            archive[today].push(task);
+          }
+          taskItem.classList.add('completed');
+        } else {
+          taskItem.classList.remove('completed');
+          // Remove from archive if unchecked
+          if (archive[today]) {
+            archive[today] = archive[today].filter(t => t !== task);
+          }
+        }
+
+        await chrome.storage.local.set({ progress, archive });
+        loadData(); // Reload to update UI and recalculate percentage
+      } catch (error) {
+        console.error('Error saving progress:', error);
+      }
+    });
+
+    taskItem.appendChild(checkbox);
+    taskItem.appendChild(label);
+    return taskItem;
+  }
+  
+  // Also archive tasks when they're completed via activity
+  async function archiveCompletedTask(taskName) {
+    try {
+      const result = await chrome.storage.local.get(['archive']);
+      const archive = result.archive || {};
+      if (!archive[today]) {
+        archive[today] = [];
+      }
+      if (!archive[today].includes(taskName)) {
+        archive[today].push(taskName);
+        await chrome.storage.local.set({ archive });
+      }
+    } catch (error) {
+      console.error('Error archiving task:', error);
+    }
+  }
+  
+  // Monitor activity changes and archive when tasks complete
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === 'local' && changes.websiteActivity) {
+      const newActivity = changes.websiteActivity.newValue || {};
+      const oldActivity = changes.websiteActivity.oldValue || {};
+      const todayActivity = newActivity[today] || {};
+      const oldTodayActivity = oldActivity[today] || {};
+      
+      // Check if any task just got marked as active
+      Object.keys(todayActivity).forEach(task => {
+        if (todayActivity[task] === true && oldTodayActivity[task] !== true) {
+          // Task just completed via activity
+          archiveCompletedTask(task);
+          // Reload to update UI
+          setTimeout(() => loadData(), 500);
+        }
+      });
+    }
+  });
 
   if (viewHeatmapBtn) {
     viewHeatmapBtn.addEventListener('click', () => {
