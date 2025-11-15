@@ -11,6 +11,7 @@ body {
   flex-direction: column;
   align-items: center;
   text-align: center;
+  position: relative;
 }
 
 h1 {
@@ -234,5 +235,13 @@ h1 {
 .task-item.from-yesterday {
   background: #fff8e1;
   border-left: 2px solid #FF9800;
+}
+
+#task-context-menu {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+#task-context-menu div:hover {
+  background: #f0f0f0 !important;
 }
 

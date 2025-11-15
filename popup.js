@@ -38,6 +38,75 @@ document.addEventListener('DOMContentLoaded', async () => {
       const todayDurations = websiteActivityDurations[today] || {};
       const yesterdayProgress = progress[yesterdayStr] || {};
       const yesterdayActivity = websiteActivity[yesterdayStr] || {};
+      const yesterdayArchive = archive[yesterdayStr] || [];
+      
+      // Find tasks that were incomplete yesterday AND are carried over
+      // Only one-time tasks that were incomplete yesterday should show "Past Work"
+      // Permanent tasks should NEVER get "Past Work" badge
+      const carriedOverTasks = allTasks.filter(task => {
+        // NEVER label permanent tasks
+        if (PERMANENT_TASKS.includes(task)) {
+          return false;
+        }
+        
+        const taskType = taskTypes[task] || 'daily';
+        
+        // Only one-time tasks can be "carried over" - daily tasks always show
+        if (taskType !== 'onetime') {
+          return false;
+        }
+        
+        const taskUrl = taskUrls[task] || '';
+        
+        // Check if task was completed yesterday (check archive first, then progress/activity)
+        const wasCompletedYesterday = yesterdayArchive.includes(task) ||
+          (taskUrl && taskUrl.trim() !== ''
+            ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
+            : (yesterdayProgress[task] === true));
+        
+        // If it was completed yesterday, it shouldn't get "Past Work" badge
+        if (wasCompletedYesterday) {
+          return false;
+        }
+        
+        // For one-time tasks: if they're showing today and weren't completed yesterday,
+        // they're either from yesterday (incomplete) or added today (new)
+        // We'll mark ALL one-time tasks that weren't completed yesterday as "Past Work"
+        // unless they appear in today's data but not yesterday's (new today)
+        
+        // Check if task appeared in yesterday's data
+        const appearedYesterday = yesterdayArchive.includes(task) ||
+          (taskUrl && taskUrl.trim() !== ''
+            ? (yesterdayActivity[task] !== undefined || yesterdayProgress[task] !== undefined)
+            : (yesterdayProgress[task] !== undefined));
+        
+        // Check if task appears in today's data
+        const appearsToday = archive[today]?.includes(task) ||
+          (taskUrl && taskUrl.trim() !== ''
+            ? (todayActivity[task] !== undefined || todayProgress[task] !== undefined)
+            : (todayProgress[task] !== undefined));
+        
+        // If it appeared yesterday and wasn't completed, it's definitely "Past Work"
+        if (appearedYesterday && !wasCompletedYesterday) {
+          return true;
+        }
+        
+        // If it appears in today's data but NOT in yesterday's, it's new today - don't mark as "Past Work"
+        if (appearsToday && !appearedYesterday) {
+          return false;
+        }
+        
+        // If it doesn't appear in today's data and didn't appear in yesterday's,
+        // it's likely from yesterday but never interacted with - mark as "Past Work"
+        // This is a heuristic: one-time tasks that exist but have no interaction history
+        // are likely carried over from previous days
+        if (!appearsToday && !appearedYesterday) {
+          return true; // Likely from yesterday, mark as "Past Work"
+        }
+        
+        // Default: if it appeared yesterday and wasn't completed, it's "Past Work"
+        return appearedYesterday && !wasCompletedYesterday;
+      });
       
       // Active tasks logic:
       // - Show ALL tasks (daily and one-time) - don't remove completed ones, just strike them off
@@ -56,13 +125,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         // One-time tasks: 
         // - Remove if completed YESTERDAY (past day - done, don't show)
         // - Keep if incomplete yesterday (carry forward) OR completed today (show with strikethrough)
+        // - Keep if added today (new task)
         if (taskType === 'onetime') {
-          const wasCompletedYesterday = taskUrl && taskUrl.trim() !== ''
-            ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
-            : (yesterdayProgress[task] === true);
+          // Check if task was completed yesterday (check archive first, then progress/activity)
+          const wasCompletedYesterday = yesterdayArchive.includes(task) ||
+            (taskUrl && taskUrl.trim() !== ''
+              ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
+              : (yesterdayProgress[task] === true));
           
-          // Remove only if completed yesterday (past day), keep otherwise
-          return !wasCompletedYesterday;
+          // Remove only if completed yesterday (past day)
+          // Keep if: incomplete yesterday, completed today, or new today
+          if (wasCompletedYesterday) {
+            return false; // Remove - was completed yesterday
+          }
+          
+          // Keep if: incomplete yesterday, completed today, or new today
+          return true;
         }
         
         return false;
@@ -71,10 +149,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Calculate progress percentage (count all active tasks, including completed ones)
       const totalTasks = activeTasks.length; // x = total active tasks
       const completedTasks = activeTasks.filter(task => {
+        const isPermanentTask = PERMANENT_TASKS.includes(task);
         const taskUrl = taskUrls[task] || '';
         const isManuallyCompleted = todayProgress[task] === true;
-        const hasActivity = todayActivity[task] === true;
+        const hasActivity = !isPermanentTask && todayActivity[task] === true;
         
+        // Permanent tasks: check only manual completion
+        if (isPermanentTask) {
+          return isManuallyCompleted;
+        }
+        
+        // Other tasks: check activity or manual completion
         if (taskUrl && taskUrl.trim() !== '') {
           return hasActivity || isManuallyCompleted;
         } else {
@@ -108,7 +193,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Show all active tasks (daily tasks always shown, one-time tasks only if incomplete)
         activeTasks.forEach(task => {
-          const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations);
+          const isCarriedOver = carriedOverTasks.includes(task);
+          const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, isCarriedOver);
           tasksList.appendChild(taskItem);
         });
       }
@@ -120,7 +206,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   
-  function createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations) {
+  function createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, isCarriedOver = false) {
     const taskType = taskTypes[task] || 'daily';
     const taskItem = document.createElement('div');
     taskItem.className = 'task-item';
@@ -130,16 +216,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     checkbox.id = `task-${task}`;
     
     const taskUrl = taskUrls[task] || '';
-    const hasActivity = todayActivity[task] === true;
+    const isPermanentTask = PERMANENT_TASKS.includes(task);
+    
+    // For permanent tasks: treat as manual checkbox (no activity tracking)
+    // For other tasks: check if they have URL and activity tracking
+    const hasActivity = !isPermanentTask && todayActivity[task] === true;
     const timeSpent = todayDurations[task] || 0;
     const minutesSpent = Math.round(timeSpent / 1000 / 60);
     
     // Determine if task is completed:
-    // - Tasks with URLs: completed if hasActivity (10+ min)
+    // - Permanent tasks: completed if todayProgress[task] is true (manual checkbox only)
+    // - Tasks with URLs (non-permanent): completed if hasActivity (10+ min)
     // - Tasks without URLs: completed if todayProgress[task] is true (manual checkbox)
-    const isCompleted = taskUrl && taskUrl.trim() !== '' 
-      ? hasActivity 
-      : (todayProgress[task] === true);
+    const isCompleted = isPermanentTask
+      ? (todayProgress[task] === true)
+      : (taskUrl && taskUrl.trim() !== '' 
+          ? hasActivity 
+          : (todayProgress[task] === true));
     
     checkbox.checked = isCompleted;
     
@@ -148,6 +241,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const taskName = document.createElement('span');
     taskName.textContent = task;
+    
+    // Show "Past Work" badge for tasks carried over from previous days
+    if (isCarriedOver) {
+      const pastWorkBadge = document.createElement('span');
+      pastWorkBadge.style.cssText = 'background: #9C27B0; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
+      pastWorkBadge.textContent = 'Past Work';
+      taskName.appendChild(pastWorkBadge);
+    }
     
     // Show task type badge ONLY for one-time tasks (not for daily/permanent)
     if (taskType === 'onetime') {
@@ -159,8 +260,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     label.appendChild(taskName);
     
-    // Handle tasks with URLs
-    if (taskUrl && taskUrl.trim() !== '') {
+    // Handle tasks with URLs (but NOT permanent tasks - they're always manual)
+    if (!isPermanentTask && taskUrl && taskUrl.trim() !== '') {
       if (!hasActivity) {
         // Task has URL but no activity - disable checkbox and show progress
         checkbox.disabled = true;
@@ -187,6 +288,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         label.appendChild(status);
       }
     }
+    // Permanent tasks: always allow manual checkbox (no URL tracking)
 
     if (isCompleted) {
       taskItem.classList.add('completed');
@@ -194,15 +296,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     checkbox.addEventListener('change', async () => {
       try {
-        // For tasks with URLs, completion is based on activity, not manual checkbox
-        // Only allow manual checkbox for tasks without URLs
-        if (taskUrl && taskUrl.trim() !== '') {
+        // Permanent tasks: always allow manual checkbox
+        // Non-permanent tasks with URLs: completion is based on activity, not manual checkbox
+        if (!isPermanentTask && taskUrl && taskUrl.trim() !== '') {
           // Task has URL - completion is controlled by activity only
           checkbox.checked = hasActivity; // Reset to activity state
           return;
         }
         
-        // For tasks without URLs, allow manual checkbox
+        // For permanent tasks or tasks without URLs, allow manual checkbox
         const result = await chrome.storage.local.get(['progress', 'archive']);
         const progress = result.progress || {};
         const archive = result.archive || {};
@@ -236,9 +338,136 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
+    // Add right-click context menu
+    taskItem.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showContextMenu(e, task, taskItem);
+    });
+
     taskItem.appendChild(checkbox);
     taskItem.appendChild(label);
     return taskItem;
+  }
+  
+  function showContextMenu(event, task, taskItem) {
+    // Remove existing context menu if any
+    const existingMenu = document.getElementById('task-context-menu');
+    if (existingMenu) {
+      existingMenu.remove();
+    }
+    
+    // Get the popup container
+    const container = document.querySelector('.container');
+    if (!container) return;
+    
+    // Get position relative to container
+    const rect = container.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    // Create context menu
+    const contextMenu = document.createElement('div');
+    contextMenu.id = 'task-context-menu';
+    contextMenu.style.cssText = `
+      position: absolute;
+      left: ${x}px;
+      top: ${y}px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 10000;
+      min-width: 120px;
+      padding: 4px 0;
+    `;
+    
+    // Remove option
+    const removeOption = document.createElement('div');
+    removeOption.style.cssText = `
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 12px;
+      color: #333;
+      user-select: none;
+    `;
+    removeOption.textContent = 'Remove';
+    removeOption.addEventListener('mouseenter', () => {
+      removeOption.style.background = '#f0f0f0';
+    });
+    removeOption.addEventListener('mouseleave', () => {
+      removeOption.style.background = 'white';
+    });
+    removeOption.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await removeTask(task);
+      contextMenu.remove();
+    });
+    
+    contextMenu.appendChild(removeOption);
+    container.appendChild(contextMenu);
+    
+    // Remove menu when clicking outside or on another context menu
+    const closeMenu = (e) => {
+      if (!contextMenu.contains(e.target)) {
+        contextMenu.remove();
+        document.removeEventListener('click', closeMenu, true);
+        document.removeEventListener('contextmenu', closeMenu, true);
+      }
+    };
+    
+    setTimeout(() => {
+      document.addEventListener('click', closeMenu, true);
+      document.addEventListener('contextmenu', closeMenu, true);
+    }, 0);
+  }
+  
+  async function removeTask(taskName) {
+    try {
+      const result = await chrome.storage.local.get(['tasks', 'permanentTasks', 'taskUrls', 'taskTypes', 'progress', 'archive']);
+      const tasks = result.tasks || [];
+      const permanentTasks = result.permanentTasks || PERMANENT_TASKS;
+      const taskUrls = result.taskUrls || {};
+      const taskTypes = result.taskTypes || {};
+      const progress = result.progress || {};
+      const archive = result.archive || {};
+      
+      // Check if it's a permanent task
+      if (permanentTasks.includes(taskName)) {
+        // Remove from permanent tasks
+        const updatedPermanentTasks = permanentTasks.filter(t => t !== taskName);
+        await chrome.storage.local.set({ permanentTasks: updatedPermanentTasks });
+      } else {
+        // Remove from custom tasks
+        const updatedTasks = tasks.filter(t => t !== taskName);
+        await chrome.storage.local.set({ tasks: updatedTasks });
+      }
+      
+      // Clean up related data
+      delete taskUrls[taskName];
+      delete taskTypes[taskName];
+      
+      // Remove from today's progress and archive
+      if (progress[today] && progress[today][taskName] !== undefined) {
+        delete progress[today][taskName];
+      }
+      if (archive[today]) {
+        archive[today] = archive[today].filter(t => t !== taskName);
+      }
+      
+      await chrome.storage.local.set({ 
+        taskUrls, 
+        taskTypes, 
+        progress, 
+        archive 
+      });
+      
+      // Reload data to update UI
+      loadData();
+    } catch (error) {
+      console.error('Error removing task:', error);
+      alert('Error removing task. Please try again.');
+    }
   }
   
   // Also archive tasks when they're completed via activity
