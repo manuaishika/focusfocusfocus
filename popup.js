@@ -109,41 +109,66 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       
       // Active tasks logic:
-      // - Show ALL tasks (daily and one-time) - don't remove completed ones, just strike them off
-      // - For one-time tasks: remove if completed YESTERDAY (past day), keep if incomplete yesterday
-      // - For daily tasks: always show (permanent)
-      // - Completed tasks stay in list with strikethrough until day passes
+      // - Permanent tasks: ALWAYS show (LeetCode, GRE Practice, ML Practice, Maths)
+      // - Daily tasks: always show (permanent)
+      // - One-time tasks: remove if completed on ANY PAST DAY (including yesterday)
+      // - Completed tasks stay in list with strikethrough ONLY if completed TODAY
       const activeTasks = allTasks.filter(task => {
         const taskType = taskTypes[task] || 'daily';
         const taskUrl = taskUrls[task] || '';
+        const isPermanentTask = PERMANENT_TASKS.includes(task);
+        
+        // Permanent tasks: ALWAYS show (never remove)
+        if (isPermanentTask) {
+          return true;
+        }
         
         // Daily tasks: always show (permanent)
         if (taskType === 'daily') {
           return true; // Always show daily tasks
         }
         
-        // One-time tasks: 
-        // - Remove if completed YESTERDAY (past day - done, don't show)
-        // - Keep if incomplete yesterday (carry forward) OR completed today (show with strikethrough)
-        // - Keep if added today (new task)
-        if (taskType === 'onetime') {
-          // Check if task was completed yesterday (check archive first, then progress/activity)
-          const wasCompletedYesterday = yesterdayArchive.includes(task) ||
-            (taskUrl && taskUrl.trim() !== ''
-              ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
-              : (yesterdayProgress[task] === true));
-          
-          // Remove only if completed yesterday (past day)
-          // Keep if: incomplete yesterday, completed today, or new today
-          if (wasCompletedYesterday) {
-            return false; // Remove - was completed yesterday
-          }
-          
-          // Keep if: incomplete yesterday, completed today, or new today
-          return true;
+        // For ONE-TIME tasks ONLY: check if completed on ANY past day
+        // FIRST: Check if task is completed TODAY - if so, keep it (show with strikethrough)
+        const isCompletedToday = archive[today]?.includes(task) ||
+          (taskUrl && taskUrl.trim() !== ''
+            ? (todayActivity[task] === true || todayProgress[task] === true)
+            : (todayProgress[task] === true));
+        
+        if (isCompletedToday) {
+          return true; // Keep - completed today, show with strikethrough
         }
         
-        return false;
+        // SECOND: Check ALL past days (including yesterday) - if completed on ANY past day, REMOVE
+        const allPastArchiveDates = Object.keys(archive).filter(date => date < today);
+        const allPastProgressDates = Object.keys(progress).filter(date => date < today);
+        const allPastActivityDates = Object.keys(websiteActivity).filter(date => date < today);
+        
+        // Check archive for ALL past days
+        for (const date of allPastArchiveDates) {
+          if (archive[date]?.includes(task)) {
+            return false; // Remove - was completed on a past day
+          }
+        }
+        
+        // Check progress for ALL past days (for manual tasks)
+        for (const date of allPastProgressDates) {
+          if (progress[date]?.[task] === true) {
+            return false; // Remove - was completed on a past day
+          }
+        }
+        
+        // Check activity for ALL past days (for URL tasks)
+        if (taskUrl && taskUrl.trim() !== '') {
+          for (const date of allPastActivityDates) {
+            if (websiteActivity[date]?.[task] === true) {
+              return false; // Remove - was completed on a past day
+            }
+          }
+        }
+        
+        // Keep if: incomplete (carry forward) or new today
+        return true;
       });
       
       // Calculate progress percentage (count all active tasks, including completed ones)
@@ -245,7 +270,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Show "Past Work" badge for tasks carried over from previous days
     if (isCarriedOver) {
       const pastWorkBadge = document.createElement('span');
-      pastWorkBadge.style.cssText = 'background: #9C27B0; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
+      pastWorkBadge.style.cssText = 'background: #00072D; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
       pastWorkBadge.textContent = 'Past Work';
       taskName.appendChild(pastWorkBadge);
     }
@@ -253,7 +278,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Show task type badge ONLY for one-time tasks (not for daily/permanent)
     if (taskType === 'onetime') {
       const badge = document.createElement('span');
-      badge.style.cssText = 'background: #FF9800; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
+      badge.style.cssText = 'background: #00072D; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
       badge.textContent = 'One-Time';
       taskName.appendChild(badge);
     }
@@ -270,10 +295,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         status.className = 'activity-status';
         if (minutesSpent > 0) {
           status.textContent = ` (${minutesSpent} min - ${Math.round((timeSpent / (10 * 60 * 1000)) * 100)}%)`;
-          status.style.color = '#FF9800';
+          status.style.color = '#00072D';
         } else {
           status.textContent = ' (No activity)';
-          status.style.color = '#f44336';
+          status.style.color = '#00072D';
         }
         status.style.fontSize = '9px';
         label.appendChild(status);
@@ -283,7 +308,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const status = document.createElement('span');
         status.className = 'activity-status';
         status.textContent = ` ✓ (${minutesSpent} min)`;
-        status.style.color = '#4CAF50';
+        status.style.color = '#00072D';
         status.style.fontSize = '9px';
         label.appendChild(status);
       }
@@ -541,7 +566,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (addTaskBtn) {
     addTaskBtn.addEventListener('click', async () => {
       const taskName = newTaskInput ? newTaskInput.value.trim() : '';
-      const taskType = taskTypeSelect ? taskTypeSelect.value : 'daily';
+      const taskType = taskTypeSelect ? taskTypeSelect.value : 'onetime';
       
       if (taskName) {
         try {
@@ -571,6 +596,10 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
           if (addTaskForm) {
             addTaskForm.classList.add('hidden');
+          }
+
+          if (taskTypeSelect) {
+            taskTypeSelect.value = 'onetime';
           }
           
           // Reload data to show new task

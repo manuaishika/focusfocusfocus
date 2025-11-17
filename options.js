@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (addTaskBtn) {
     addTaskBtn.addEventListener('click', async () => {
       const taskName = newTaskInput ? newTaskInput.value.trim() : '';
-      const taskType = taskTypeSelect ? taskTypeSelect.value : 'daily';
+      const taskType = taskTypeSelect ? taskTypeSelect.value : 'onetime';
 
       if (!taskName) return;
 
@@ -280,6 +280,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (newTaskInput) {
           newTaskInput.value = '';
+        }
+        if (taskTypeSelect) {
+          taskTypeSelect.value = 'onetime';
         }
 
         await loadTasks();

@@ -200,10 +200,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 
                 if (day.isFuture) {
                   dayCell.style.backgroundColor = '#ffffff';
-                  dayCell.style.border = '1px solid #e1e4e8';
+                  dayCell.style.border = '1px solid #ccc';
                   dayCell.title = `${day.date}: Future date`;
                 } else {
-                  dayCell.style.backgroundColor = day.completed ? '#40c463' : '#ebedf0';
+                  dayCell.style.backgroundColor = day.completed ? '#00072D' : '#ebedf0';
                   const dateObj = new Date(day.date);
                   const dateStr = dateObj.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
                   dayCell.title = `${dateStr}: ${day.completed ? 'Completed' : 'Not completed'}`;

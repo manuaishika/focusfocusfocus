@@ -9,6 +9,7 @@ body {
   background: #ffffff;
   text-align: center;
   box-sizing: border-box;
+  color: #00072D;
 }
 
 .container {
@@ -23,20 +24,20 @@ body {
 h1 {
   font-size: 24px;
   margin: 0 0 10px 0;
-  color: #333;
+  color: #00072D;
   text-align: center;
 }
 
 h2 {
   font-size: 18px;
   margin: 20px 0 15px 0;
-  color: #333;
+  color: #00072D;
   text-align: center;
 }
 
 .info {
   font-size: 12px;
-  color: #666;
+  color: #00072D;
   margin: 0 0 20px 0;
   text-align: center;
 }
@@ -48,9 +49,9 @@ h2 {
 
 .edit-btn {
   padding: 8px 16px;
-  border: none;
+  border: 1px solid #00072D;
   border-radius: 6px;
-  background: #4CAF50;
+  background: #00072D;
   color: white;
   cursor: pointer;
   font-size: 13px;
@@ -62,11 +63,11 @@ h2 {
 }
 
 .edit-btn:hover {
-  background: #45a049;
+  background: #00072D;
 }
 
 .edit-btn.active {
-  background: #FF9800;
+  background: #00072D;
 }
 
 #tasks-container {
@@ -78,7 +79,8 @@ h2 {
   flex-direction: column;
   padding: 15px;
   margin: 0 auto 12px auto;
-  background: #f5f5f5;
+  background: #FFFFFF;
+  border: 1px solid #00072D;
   border-radius: 6px;
   max-width: 600px;
   text-align: left;
@@ -86,8 +88,8 @@ h2 {
 }
 
 .permanent-task-row {
-  background: #e8f5e9;
-  border: 1px solid #4CAF50;
+  background: #FFFFFF;
+  border: 1px solid #00072D;
 }
 
 .task-header {
@@ -106,16 +108,16 @@ h2 {
 
 .task-row button {
   padding: 6px 12px;
-  border: none;
+  border: 1px solid #00072D;
   border-radius: 4px;
-  background: #f44336;
+  background: #00072D;
   color: white;
   cursor: pointer;
   font-size: 12px;
 }
 
 .task-row button:hover {
-  background: #da190b;
+  background: #00072D;
 }
 
 .task-url-section {
@@ -126,16 +128,18 @@ h2 {
 
 .task-url-section label {
   font-size: 12px;
-  color: #666;
+  color: #00072D;
   min-width: 80px;
 }
 
 .task-url-section input {
   flex: 1;
   padding: 8px;
-  border: 1px solid #ddd;
+  border: 1px solid #00072D;
   border-radius: 4px;
   font-size: 12px;
+  background: #FFFFFF;
+  color: #00072D;
 }
 
 .add-task {
@@ -151,14 +155,16 @@ h2 {
   flex: 1;
   min-width: 200px;
   padding: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid #00072D;
   border-radius: 6px;
   font-size: 14px;
+  background: #FFFFFF;
+  color: #00072D;
 }
 
 .add-task select {
   padding: 10px;
-  border: 1px solid #ddd;
+  border: 1px solid #00072D;
   border-radius: 6px;
   font-size: 14px;
   background: white;
@@ -166,16 +172,16 @@ h2 {
 
 .add-task button {
   padding: 10px 20px;
-  border: none;
+  border: 1px solid #00072D;
   border-radius: 6px;
-  background: #4CAF50;
+  background: #00072D;
   color: white;
   cursor: pointer;
   font-size: 14px;
 }
 
 .add-task button:hover {
-  background: #45a049;
+  background: #00072D;
 }
 
 .task-type-badge {
@@ -188,31 +194,31 @@ h2 {
 }
 
 .task-type-daily {
-  background: #2196F3;
+  background: #00072D;
   color: white;
 }
 
 .task-type-onetime {
-  background: #FF9800;
+  background: #00072D;
   color: white;
 }
 
 .delete-permanent-btn {
   padding: 6px 12px;
-  border: none;
+  border: 1px solid #00072D;
   border-radius: 4px;
-  background: #f44336;
+  background: #00072D;
   color: white;
   cursor: pointer;
   font-size: 12px;
 }
 
 .delete-permanent-btn:hover {
-  background: #da190b;
+  background: #00072D;
 }
 
 .empty-message {
-  color: #666;
+  color: #00072D;
   font-size: 13px;
   margin: 10px auto;
   max-width: 400px;
@@ -234,8 +240,9 @@ h2 {
   gap: 10px;
   padding: 10px;
   margin-bottom: 8px;
-  background: #f9f9f9;
+  background: #FFFFFF;
   border-radius: 6px;
+  border: 1px solid #00072D;
   justify-content: space-between;
 }
 
@@ -248,32 +255,34 @@ h2 {
 
 .reminder-time input[type="time"] {
   padding: 6px;
-  border: 1px solid #ddd;
+  border: 1px solid #00072D;
   border-radius: 4px;
   font-size: 14px;
+  background: #FFFFFF;
+  color: #00072D;
 }
 
 .remove-reminder-btn {
   padding: 6px 12px;
-  border: none;
+  border: 1px solid #00072D;
   border-radius: 4px;
-  background: #f44336;
+  background: #00072D;
   color: white;
   cursor: pointer;
   font-size: 12px;
 }
 
 .remove-reminder-btn:hover {
-  background: #d32f2f;
+  background: #00072D;
 }
 
 .add-reminder-btn {
   width: 100%;
   padding: 10px;
-  border: 2px dashed #4CAF50;
+  border: 2px dashed #00072D;
   border-radius: 6px;
   background: transparent;
-  color: #4CAF50;
+  color: #00072D;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -282,8 +291,8 @@ h2 {
 }
 
 .add-reminder-btn:hover {
-  background: #f0f8f0;
-  border-color: #45a049;
+  background: #FFFFFF;
+  border-color: #00072D;
 }
 
 .reminder-toggle {
@@ -303,6 +312,6 @@ h2 {
 
 .reminder-toggle span {
   font-size: 14px;
-  color: #333;
+  color: #00072D;
 }
 
