@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   let currentCustomTasks = [];
   let currentTaskUrls = {};
   let currentTaskTypes = {};
+  let taskActivationDates = {};
   let editingPermanent = false;
   let reminderTimes = [];
   let remindersEnabled = true;
@@ -35,7 +36,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadTasks() {
     try {
-      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'taskUrls', 'taskTypes']);
+      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'taskUrls', 'taskTypes', 'taskActivationDates']);
       currentPermanentTasks =
         Array.isArray(result.permanentTasks) && result.permanentTasks.length
           ? [...result.permanentTasks]
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       currentCustomTasks = Array.isArray(result.tasks) ? [...result.tasks] : [];
       currentTaskUrls = result.taskUrls || {};
       currentTaskTypes = result.taskTypes || {};
+      taskActivationDates = result.taskActivationDates || {};
 
       // Ensure permanent tasks are marked as daily
       let shouldPersistTypes = false;
@@ -206,15 +208,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function removePermanentTask(task) {
     try {
-      const result = await chrome.storage.local.get(['permanentTasks', 'taskUrls', 'taskTypes']);
+      const result = await chrome.storage.local.get(['permanentTasks', 'taskUrls', 'taskTypes', 'taskActivationDates']);
       const permanentTasks = (result.permanentTasks || []).filter(t => t !== task);
       const taskUrls = result.taskUrls || {};
       const taskTypes = result.taskTypes || {};
+      const activationDates = result.taskActivationDates || {};
 
       delete taskUrls[task];
       delete taskTypes[task];
+      delete activationDates[task];
 
-      await chrome.storage.local.set({ permanentTasks, taskUrls, taskTypes });
+      await chrome.storage.local.set({ permanentTasks, taskUrls, taskTypes, taskActivationDates: activationDates });
       await loadTasks();
     } catch (error) {
       console.error('Error removing permanent task:', error);
@@ -223,11 +227,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function deleteCustomTask(task) {
     try {
-      const result = await chrome.storage.local.get(['tasks', 'progress', 'taskUrls', 'taskTypes']);
+      const result = await chrome.storage.local.get(['tasks', 'progress', 'taskUrls', 'taskTypes', 'taskActivationDates']);
       const tasks = (result.tasks || []).filter(t => t !== task);
       const progress = result.progress || {};
       const taskUrls = result.taskUrls || {};
       const taskTypes = result.taskTypes || {};
+      const activationDates = result.taskActivationDates || {};
 
       Object.keys(progress).forEach(date => {
         if (progress[date] && progress[date][task]) {
@@ -240,8 +245,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       delete taskUrls[task];
       delete taskTypes[task];
+      delete activationDates[task];
 
-      await chrome.storage.local.set({ tasks, progress, taskUrls, taskTypes });
+      await chrome.storage.local.set({ tasks, progress, taskUrls, taskTypes, taskActivationDates: activationDates });
       await loadTasks();
     } catch (error) {
       console.error('Error deleting task:', error);
@@ -264,6 +270,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (!taskName) return;
 
       if (currentPermanentTasks.includes(taskName) || currentCustomTasks.includes(taskName)) {
+        const existingType = currentTaskTypes[taskName] || 'daily';
+        if (existingType !== 'onetime') {
+          return;
+        }
+        const todayStr = new Date().toISOString().split('T')[0];
+        taskActivationDates[taskName] = todayStr;
+        await chrome.storage.local.set({ taskActivationDates });
+        if (newTaskInput) {
+          newTaskInput.value = '';
+        }
+        if (taskTypeSelect) {
+          taskTypeSelect.value = 'onetime';
+        }
+        await loadTasks();
         return;
       }
 
@@ -271,11 +291,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         currentCustomTasks.push(taskName);
         currentTaskUrls[taskName] = '';
         currentTaskTypes[taskName] = taskType;
+        taskActivationDates[taskName] = new Date().toISOString().split('T')[0];
 
         await chrome.storage.local.set({
           tasks: currentCustomTasks,
           taskUrls: currentTaskUrls,
-          taskTypes: currentTaskTypes
+          taskTypes: currentTaskTypes,
+          taskActivationDates
         });
 
         if (newTaskInput) {

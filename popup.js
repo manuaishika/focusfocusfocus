@@ -20,10 +20,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayStr = yesterday.toISOString().split('T')[0];
   const PERMANENT_TASKS = ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+  const DEFAULT_ACTIVATION_DATE = '1970-01-01';
 
   async function loadData() {
     try {
-      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskUrls', 'websiteActivity', 'taskTypes', 'websiteActivityDurations', 'archive']);
+      // Check if we need to perform daily reset (in case background didn't run)
+      const resetCheck = await chrome.storage.local.get(['lastResetDate']);
+      const today = new Date().toISOString().split('T')[0];
+      if (resetCheck.lastResetDate !== today) {
+        // Trigger reset via background script message
+        chrome.runtime.sendMessage({ action: 'performDailyReset' }).catch(() => {
+          // Background might not be ready, that's okay
+        });
+      }
+      
+      const result = await chrome.storage.local.get(['permanentTasks', 'tasks', 'progress', 'taskUrls', 'websiteActivity', 'taskTypes', 'websiteActivityDurations', 'archive', 'taskActivationDates']);
       const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
       const customTasks = result.tasks || [];
       const allTasks = [...permanentTasks, ...customTasks];
@@ -33,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const websiteActivityDurations = result.websiteActivityDurations || {};
       const taskTypes = result.taskTypes || {};
       const archive = result.archive || {};
+      const taskActivationDates = result.taskActivationDates || {};
       const todayProgress = progress[today] || {};
       const todayActivity = websiteActivity[today] || {};
       const todayDurations = websiteActivityDurations[today] || {};
@@ -40,73 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const yesterdayActivity = websiteActivity[yesterdayStr] || {};
       const yesterdayArchive = archive[yesterdayStr] || [];
       
-      // Find tasks that were incomplete yesterday AND are carried over
-      // Only one-time tasks that were incomplete yesterday should show "Past Work"
-      // Permanent tasks should NEVER get "Past Work" badge
-      const carriedOverTasks = allTasks.filter(task => {
-        // NEVER label permanent tasks
-        if (PERMANENT_TASKS.includes(task)) {
-          return false;
-        }
-        
-        const taskType = taskTypes[task] || 'daily';
-        
-        // Only one-time tasks can be "carried over" - daily tasks always show
-        if (taskType !== 'onetime') {
-          return false;
-        }
-        
-        const taskUrl = taskUrls[task] || '';
-        
-        // Check if task was completed yesterday (check archive first, then progress/activity)
-        const wasCompletedYesterday = yesterdayArchive.includes(task) ||
-          (taskUrl && taskUrl.trim() !== ''
-            ? (yesterdayActivity[task] === true || yesterdayProgress[task] === true)
-            : (yesterdayProgress[task] === true));
-        
-        // If it was completed yesterday, it shouldn't get "Past Work" badge
-        if (wasCompletedYesterday) {
-          return false;
-        }
-        
-        // For one-time tasks: if they're showing today and weren't completed yesterday,
-        // they're either from yesterday (incomplete) or added today (new)
-        // We'll mark ALL one-time tasks that weren't completed yesterday as "Past Work"
-        // unless they appear in today's data but not yesterday's (new today)
-        
-        // Check if task appeared in yesterday's data
-        const appearedYesterday = yesterdayArchive.includes(task) ||
-          (taskUrl && taskUrl.trim() !== ''
-            ? (yesterdayActivity[task] !== undefined || yesterdayProgress[task] !== undefined)
-            : (yesterdayProgress[task] !== undefined));
-        
-        // Check if task appears in today's data
-        const appearsToday = archive[today]?.includes(task) ||
-          (taskUrl && taskUrl.trim() !== ''
-            ? (todayActivity[task] !== undefined || todayProgress[task] !== undefined)
-            : (todayProgress[task] !== undefined));
-        
-        // If it appeared yesterday and wasn't completed, it's definitely "Past Work"
-        if (appearedYesterday && !wasCompletedYesterday) {
-          return true;
-        }
-        
-        // If it appears in today's data but NOT in yesterday's, it's new today - don't mark as "Past Work"
-        if (appearsToday && !appearedYesterday) {
-          return false;
-        }
-        
-        // If it doesn't appear in today's data and didn't appear in yesterday's,
-        // it's likely from yesterday but never interacted with - mark as "Past Work"
-        // This is a heuristic: one-time tasks that exist but have no interaction history
-        // are likely carried over from previous days
-        if (!appearsToday && !appearedYesterday) {
-          return true; // Likely from yesterday, mark as "Past Work"
-        }
-        
-        // Default: if it appeared yesterday and wasn't completed, it's "Past Work"
-        return appearedYesterday && !wasCompletedYesterday;
-      });
+      // Past Work badges removed; tasks simply carry forward when incomplete.
       
       // Active tasks logic:
       // - Permanent tasks: ALWAYS show (LeetCode, GRE Practice, ML Practice, Maths)
@@ -117,6 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const taskType = taskTypes[task] || 'daily';
         const taskUrl = taskUrls[task] || '';
         const isPermanentTask = PERMANENT_TASKS.includes(task);
+        const activationDate = taskActivationDates[task] || DEFAULT_ACTIVATION_DATE;
         
         // Permanent tasks: ALWAYS show (never remove)
         if (isPermanentTask) {
@@ -140,9 +87,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         
         // SECOND: Check ALL past days (including yesterday) - if completed on ANY past day, REMOVE
-        const allPastArchiveDates = Object.keys(archive).filter(date => date < today);
-        const allPastProgressDates = Object.keys(progress).filter(date => date < today);
-        const allPastActivityDates = Object.keys(websiteActivity).filter(date => date < today);
+        const allPastArchiveDates = Object.keys(archive).filter(date => date < today && date >= activationDate);
+        const allPastProgressDates = Object.keys(progress).filter(date => date < today && date >= activationDate);
+        const allPastActivityDates = Object.keys(websiteActivity).filter(date => date < today && date >= activationDate);
         
         // Check archive for ALL past days
         for (const date of allPastArchiveDates) {
@@ -218,8 +165,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         // Show all active tasks (daily tasks always shown, one-time tasks only if incomplete)
         activeTasks.forEach(task => {
-          const isCarriedOver = carriedOverTasks.includes(task);
-          const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, isCarriedOver);
+          const taskItem = createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations);
           tasksList.appendChild(taskItem);
         });
       }
@@ -231,7 +177,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   
-  function createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations, isCarriedOver = false) {
+  function createTaskItem(task, taskTypes, taskUrls, todayProgress, todayActivity, todayDurations) {
     const taskType = taskTypes[task] || 'daily';
     const taskItem = document.createElement('div');
     taskItem.className = 'task-item';
@@ -266,14 +212,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     const taskName = document.createElement('span');
     taskName.textContent = task;
-    
-    // Show "Past Work" badge for tasks carried over from previous days
-    if (isCarriedOver) {
-      const pastWorkBadge = document.createElement('span');
-      pastWorkBadge.style.cssText = 'background: #00072D; color: white; padding: 1px 4px; border-radius: 2px; font-size: 8px; margin-left: 4px; font-weight: 500;';
-      pastWorkBadge.textContent = 'Past Work';
-      taskName.appendChild(pastWorkBadge);
-    }
     
     // Show task type badge ONLY for one-time tasks (not for daily/permanent)
     if (taskType === 'onetime') {
@@ -449,30 +387,27 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   async function removeTask(taskName) {
     try {
-      const result = await chrome.storage.local.get(['tasks', 'permanentTasks', 'taskUrls', 'taskTypes', 'progress', 'archive']);
+      const result = await chrome.storage.local.get(['tasks', 'permanentTasks', 'taskUrls', 'taskTypes', 'progress', 'archive', 'taskActivationDates']);
       const tasks = result.tasks || [];
       const permanentTasks = result.permanentTasks || PERMANENT_TASKS;
       const taskUrls = result.taskUrls || {};
       const taskTypes = result.taskTypes || {};
       const progress = result.progress || {};
       const archive = result.archive || {};
+      const taskActivationDates = result.taskActivationDates || {};
       
-      // Check if it's a permanent task
+      const updates = { taskUrls, taskTypes, progress, archive, taskActivationDates };
+      
       if (permanentTasks.includes(taskName)) {
-        // Remove from permanent tasks
-        const updatedPermanentTasks = permanentTasks.filter(t => t !== taskName);
-        await chrome.storage.local.set({ permanentTasks: updatedPermanentTasks });
+        updates.permanentTasks = permanentTasks.filter(t => t !== taskName);
       } else {
-        // Remove from custom tasks
-        const updatedTasks = tasks.filter(t => t !== taskName);
-        await chrome.storage.local.set({ tasks: updatedTasks });
+        updates.tasks = tasks.filter(t => t !== taskName);
       }
       
-      // Clean up related data
       delete taskUrls[taskName];
       delete taskTypes[taskName];
+      delete taskActivationDates[taskName];
       
-      // Remove from today's progress and archive
       if (progress[today] && progress[today][taskName] !== undefined) {
         delete progress[today][taskName];
       }
@@ -480,14 +415,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         archive[today] = archive[today].filter(t => t !== taskName);
       }
       
-      await chrome.storage.local.set({ 
-        taskUrls, 
-        taskTypes, 
-        progress, 
-        archive 
-      });
-      
-      // Reload data to update UI
+      await chrome.storage.local.set(updates);
       loadData();
     } catch (error) {
       console.error('Error removing task:', error);
@@ -570,16 +498,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       
       if (taskName) {
         try {
-          const result = await chrome.storage.local.get(['tasks', 'taskUrls', 'taskTypes', 'permanentTasks']);
+          const result = await chrome.storage.local.get(['tasks', 'taskUrls', 'taskTypes', 'permanentTasks', 'taskActivationDates']);
           const tasks = result.tasks || [];
           const taskUrls = result.taskUrls || {};
           const taskTypes = result.taskTypes || {};
           const permanentTasks = result.permanentTasks || PERMANENT_TASKS;
+          const taskActivationDates = result.taskActivationDates || {};
           
           // Check if task already exists (in permanent or custom)
           const allTasks = [...permanentTasks, ...tasks];
           if (allTasks.includes(taskName)) {
-            alert('Task already exists!');
+            const existingType = taskTypes[taskName] || 'daily';
+            if (existingType !== 'onetime') {
+              alert('Task already exists!');
+              return;
+            }
+            taskActivationDates[taskName] = today;
+            await chrome.storage.local.set({ taskActivationDates });
+            if (newTaskInput) {
+              newTaskInput.value = '';
+            }
+            if (taskTypeSelect) {
+              taskTypeSelect.value = 'onetime';
+            }
+            loadData();
             return;
           }
           
@@ -587,8 +529,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           tasks.push(taskName);
           taskUrls[taskName] = ''; // Initialize with empty URL
           taskTypes[taskName] = taskType;
+          taskActivationDates[taskName] = today;
           
-          await chrome.storage.local.set({ tasks, taskUrls, taskTypes });
+          await chrome.storage.local.set({ tasks, taskUrls, taskTypes, taskActivationDates });
           
           // Clear input and hide form
           if (newTaskInput) {

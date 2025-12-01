@@ -41,9 +41,120 @@ async function scheduleAllReminders() {
   });
 }
 
+// Daily reset function to run at midnight
+async function performDailyReset() {
+  try {
+    const result = await chrome.storage.local.get([
+      'progress', 
+      'permanentTasks', 
+      'taskTypes', 
+      'lastResetDate',
+      'tasks',
+      'websiteActivity',
+      'websiteActivityDurations',
+      'archive'
+    ]);
+    const progress = result.progress || {};
+    const permanentTasks = result.permanentTasks || ['LeetCode', 'GRE Practice', 'ML Practice', 'Maths'];
+    const taskTypes = result.taskTypes || {};
+    const websiteActivity = result.websiteActivity || {};
+    const websiteActivityDurations = result.websiteActivityDurations || {};
+    const archive = result.archive || {};
+    const customTasks = result.tasks || [];
+    const today = new Date().toISOString().split('T')[0];
+    const lastResetDate = result.lastResetDate || '';
+    
+    // Only reset if we haven't already reset today
+    if (lastResetDate === today) {
+      return;
+    }
+    
+    // Get all tasks
+    const allTasks = [...permanentTasks, ...customTasks];
+    
+    // Initialize today's data structures if needed
+    if (!progress[today]) {
+      progress[today] = {};
+    }
+    if (!websiteActivity[today]) {
+      websiteActivity[today] = {};
+    }
+    if (!websiteActivityDurations[today]) {
+      websiteActivityDurations[today] = {};
+    }
+    if (!archive[today]) {
+      archive[today] = [];
+    }
+    
+    // Reset daily/permanent tasks: clear today's progress, activity, and archive for them
+    // One-time tasks that were completed will be filtered out by popup.js logic
+    allTasks.forEach(task => {
+      const taskType = taskTypes[task] || 'daily';
+      const isPermanentTask = permanentTasks.includes(task);
+      
+      // Reset daily and permanent tasks - they start fresh each day
+      if (taskType === 'daily' || isPermanentTask) {
+        // Clear progress
+        if (progress[today] && progress[today][task] !== undefined) {
+          delete progress[today][task];
+        }
+        // Clear activity
+        if (websiteActivity[today] && websiteActivity[today][task] !== undefined) {
+          delete websiteActivity[today][task];
+        }
+        // Clear activity durations
+        if (websiteActivityDurations[today] && websiteActivityDurations[today][task] !== undefined) {
+          delete websiteActivityDurations[today][task];
+        }
+        // Remove from archive if present
+        if (archive[today] && archive[today].includes(task)) {
+          archive[today] = archive[today].filter(t => t !== task);
+        }
+      }
+    });
+    
+    // Save updated data and mark reset date
+    await chrome.storage.local.set({
+      progress,
+      websiteActivity,
+      websiteActivityDurations,
+      archive,
+      lastResetDate: today
+    });
+    
+    console.log('Daily reset completed for', today);
+  } catch (error) {
+    console.error('Error during daily reset:', error);
+  }
+}
+
+// Schedule daily reset alarm at midnight
+function scheduleDailyReset() {
+  const now = new Date();
+  const midnight = new Date();
+  midnight.setHours(24, 0, 0, 0); // Next midnight
+  
+  // Calculate milliseconds until midnight
+  const msUntilMidnight = midnight.getTime() - now.getTime();
+  
+  // Create alarm for midnight, repeating daily
+  chrome.alarms.create("dailyReset", {
+    when: midnight.getTime(),
+    periodInMinutes: 60 * 24 // Repeat every 24 hours
+  });
+  
+  console.log('Daily reset scheduled for', midnight.toISOString());
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   // Create frequent heartbeat for better tracking (every 30 seconds)
   chrome.alarms.create("trackingHeartbeat", { periodInMinutes: 0.5 });
+  
+  // Schedule daily reset
+  scheduleDailyReset();
+  
+  // Perform reset immediately if needed (in case extension was off at midnight)
+  await performDailyReset();
   
   // Start tracking immediately on install
   try {
@@ -127,6 +238,8 @@ chrome.runtime.onInstalled.addListener(async () => {
 // Reschedule reminders on startup and initialize tracking
 chrome.runtime.onStartup.addListener(async () => {
   scheduleAllReminders();
+  scheduleDailyReset();
+  await performDailyReset();
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) {
@@ -153,7 +266,12 @@ async function initializeTracking() {
 initializeTracking();
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name === "dailyReminder" || alarm.name.startsWith("reminder_")) {
+  if (alarm.name === "dailyReset") {
+    // Perform daily reset at midnight
+    await performDailyReset();
+    // Reschedule for next midnight
+    scheduleDailyReset();
+  } else if (alarm.name === "dailyReminder" || alarm.name.startsWith("reminder_")) {
     chrome.storage.local.get(['permanentTasks', 'tasks', 'taskTypes', 'progress', 'remindersEnabled'], (result) => {
       // Check if reminders are enabled
       if (result.remindersEnabled === false) {
@@ -443,5 +561,18 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
     } catch (error) {
       console.error('Error handling window focus:', error);
     }
+  }
+});
+
+// Handle messages from popup/other scripts
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'performDailyReset') {
+    performDailyReset().then(() => {
+      sendResponse({ success: true });
+    }).catch((error) => {
+      console.error('Error performing daily reset:', error);
+      sendResponse({ success: false, error: error.message });
+    });
+    return true; // Indicates we will send a response asynchronously
   }
 });
